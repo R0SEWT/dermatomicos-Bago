@@ -50,6 +50,44 @@ def run_file_cmd(path: str):
     _finalize(labels)
 
 
+@dataclass
+class _Night:
+    """Vista mínima de una noche leída de gold para alimentar el reporte de tendencia."""
+    cry_load: float
+    scratch_load: float
+    awakenings: int
+
+
+def _load_real_nights(out_root: str = "data/gold", n: int | None = None) -> list[_Night]:
+    """Lee las noches persistidas en gold (ordenadas) como vistas para la tendencia."""
+    df = read_nights(str(pathlib.Path(out_root) / "nights"))
+    if df.is_empty():
+        return []
+    if n is not None:
+        df = df.tail(n)  # últimas n noches (read_nights ya ordena por night_ts)
+    return [
+        _Night(cry_load=c, scratch_load=s, awakenings=a)
+        for c, s, a in zip(df["cry_load"], df["scratch_load"], df["awakenings"])
+    ]
+
+
+def _emit_trend(nights, out_root: str = "data/gold", synthetic: bool = False) -> pathlib.Path:
+    """Recompone la curva acumulada, escribe el reporte trend e imprime el sparkline."""
+    cfg = SeverityConfig()
+    loads = [(f.cry_load, f.scratch_load) for f in nights]
+    curve = severity_curve(loads, cfg)
+    md = build_trend_report(nights, curve, cfg, synthetic=synthetic)
+    reports_dir = pathlib.Path(out_root) / "reports"
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    out = reports_dir / f"trend_{time.time_ns()}.md"
+    out.write_text(md)
+    spark = sparkline(curve, lo=0.0, hi=cfg.max_value)
+    print(f"Tendencia ({len(curve)} noches): {spark}")
+    print(f"Severidad acumulada: {curve[-1] if curve else 0.0:.2f} / {cfg.max_value:.2f}")
+    print(f"Reporte tendencia: {out}")
+    return out
+
+
 def _finalize(labels: list[str], out_root: str = "data/gold"):
     frame_s = DetectConfig().frame_seconds
     episodes = frames_to_episodes(labels, frame_s)
@@ -63,45 +101,25 @@ def _finalize(labels: list[str], out_root: str = "data/gold"):
     out = reports_dir / f"{night_ts}.md"
     out.write_text(ReportBuilder().build(feats, tracker))
     night_path = write_night(feats, tracker.value, night_ts, str(pathlib.Path(out_root) / "nights"))
-    print(f"\nReporte: {out}\nNoche: {night_path}\nSeveridad: {tracker.value:.2f}")
+    print(f"\nReporte noche: {out}\nNoche: {night_path}\nSeveridad noche: {tracker.value:.2f}")
+    # Si ya hay historial, mostrar también la trayectoria multinoche (incluye esta noche).
+    nights = _load_real_nights(out_root)
+    if len(nights) >= 2:
+        _emit_trend(nights, out_root=out_root)
 
 
 def run_trend(synthetic: bool = False, n: int = 7):
-    cfg = SeverityConfig()
     if synthetic:
         nights = synthetic_nights(n)
     else:
-        df = read_nights()
-        if df.is_empty():
+        nights = _load_real_nights(n=n)
+        if not nights:
             print(
                 "data/gold/nights/ está vacío. Corre sesiones (derma live/replay) "
                 "o usa: derma trend --synthetic"
             )
             return
-        df = df.tail(n)  # últimas n noches (read_nights ya ordena por night_ts)
-        nights = [
-            _Night(cry_load=c, scratch_load=s, awakenings=a)
-            for c, s, a in zip(df["cry_load"], df["scratch_load"], df["awakenings"])
-        ]
-    loads = [(f.cry_load, f.scratch_load) for f in nights]
-    curve = severity_curve(loads, cfg)
-    md = build_trend_report(nights, curve, cfg, synthetic=synthetic)
-    reports_dir = pathlib.Path("data/gold/reports")
-    reports_dir.mkdir(parents=True, exist_ok=True)
-    out = reports_dir / f"trend_{int(time.time())}.md"
-    out.write_text(md)
-    spark = sparkline(curve, lo=0.0, hi=cfg.max_value)
-    print(f"Curva ({len(curve)} noches): {spark}")
-    print(f"Severidad actual: {curve[-1] if curve else 0.0:.2f} / {cfg.max_value:.2f}")
-    print(f"Reporte: {out}")
-
-
-@dataclass
-class _Night:
-    """Vista mínima de una noche leída de gold para alimentar el reporte de tendencia."""
-    cry_load: float
-    scratch_load: float
-    awakenings: int
+    _emit_trend(nights, synthetic=synthetic)
 
 
 def main():
