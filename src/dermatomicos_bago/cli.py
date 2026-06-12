@@ -57,7 +57,7 @@ def _finalize(labels: list[str], out_root: str = "data/gold"):
     feats = aggregate(episodes, night_s, FeatureConfig())
     tracker = SeverityTracker(SeverityConfig())
     tracker.update(feats.cry_load, feats.scratch_load)
-    night_ts = int(time.time())
+    night_ts = time.time_ns()  # ns para que sesiones en el mismo segundo no colisionen
     reports_dir = pathlib.Path(out_root) / "reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
     out = reports_dir / f"{night_ts}.md"

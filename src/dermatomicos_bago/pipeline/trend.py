@@ -57,7 +57,8 @@ def synthetic_nights(n: int = 7, seed: int = 0) -> list[NightFeatures]:
     # perfil base de carga total (cry+scratch) por noche, 0..1
     profile = [0.85, 0.65, 0.35, 0.10, 0.05, 0.45, 0.80]
     if n != len(profile):
-        # reescala el perfil a n puntos por interpolación lineal simple
+        # reescala a n puntos por muestreo de índice (nearest-neighbor) — basta para
+        # una secuencia ilustrativa; conserva la forma sucias→limpias→recaída
         profile = [
             profile[round(i * (len(profile) - 1) / max(1, n - 1))] for i in range(n)
         ]
@@ -92,6 +93,10 @@ def build_trend_report(
     synthetic: bool = False,
 ) -> str:
     """Reporte markdown multi-noche: sparkline + tabla por noche + nota de escalada."""
+    if len(nights) != len(curve):
+        raise ValueError(
+            f"nights ({len(nights)}) y curve ({len(curve)}) deben tener la misma longitud"
+        )
     cfg = cfg or SeverityConfig()
     spark = sparkline(curve, lo=0.0, hi=cfg.max_value)
     latest = curve[-1] if curve else 0.0
