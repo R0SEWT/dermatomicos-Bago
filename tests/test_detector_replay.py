@@ -69,6 +69,19 @@ def test_run_file_resets_smoother_between_streams(tmp_path):
     assert second == ["quiet", "quiet", "quiet"]
 
 
+def test_run_file_timestamps_use_hop_when_smaller_than_frame(tmp_path):
+    wav = tmp_path / "overlap.wav"
+    _write_wav(wav, [(0.0, 3)])   # 3s -> ventanas de 1s cada 0.5s = 5 ventanas solapadas
+    cfg = DetectConfig(frame_seconds=1.0, hop_seconds=0.5)
+    det = StreamDetector(cfg=cfg, yamnet=FakeYamnet())
+    events = []
+    det.run_file(str(wav), lambda ev: events.append(ev))
+    # t_start avanza por el hop, no por la longitud de ventana
+    assert [round(e.t_start, 3) for e in events] == [0.0, 0.5, 1.0, 1.5, 2.0]
+    # cada ventana dura frame_seconds aunque se solapen (t_end = t_start + frame, no + hop)
+    assert all(round(e.t_end - e.t_start, 3) == 1.0 for e in events)
+
+
 def test_run_file_drops_trailing_partial_window(tmp_path):
     wav = tmp_path / "partial.wav"
     _write_wav(wav, [(0.0, 2.5)])   # 2.5s -> 2 ventanas de 1s, se descarta el 0.5s final
