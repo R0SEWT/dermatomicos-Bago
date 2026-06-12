@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "dermatomicos_Bago",
+  "project_id": "383ee24e-8d18-4e52-99c1-f079f2c60677"
+}
