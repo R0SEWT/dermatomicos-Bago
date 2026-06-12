@@ -61,3 +61,19 @@ def test_build_trend_report_escalation_flag():
     nights = synthetic_nights(5, seed=1)
     md = build_trend_report(nights, curve, escalation_threshold=0.5)
     assert "Escalada" in md
+
+
+def test_build_trend_report_non_synthetic_omits_disclaimer():
+    nights = synthetic_nights(7, seed=0)
+    curve = severity_curve([(n.cry_load, n.scratch_load) for n in nights])
+    md = build_trend_report(nights, curve, synthetic=False)
+    assert "ilustrativa" not in md
+
+
+def test_build_trend_report_no_escalation_when_below_threshold():
+    # noches limpias -> severidad baja -> sin bloque de escalada
+    loads = [(0.0, 0.0)] * 5
+    curve = severity_curve(loads)
+    nights = synthetic_nights(5, seed=1)
+    md = build_trend_report(nights, curve, escalation_threshold=0.5)
+    assert "Escalada" not in md

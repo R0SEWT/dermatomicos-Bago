@@ -78,6 +78,7 @@ def run_trend(synthetic: bool = False, n: int = 7):
                 "o usa: derma trend --synthetic"
             )
             return
+        df = df.tail(n)  # últimas n noches (read_nights ya ordena por night_ts)
         nights = [
             _Night(cry_load=c, scratch_load=s, awakenings=a)
             for c, s, a in zip(df["cry_load"], df["scratch_load"], df["awakenings"])
