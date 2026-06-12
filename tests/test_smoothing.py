@@ -30,3 +30,17 @@ def test_competing_candidates_reset_the_counter():
     # cry, scratch alternados nunca acumulan min_run del mismo -> se mantiene quiet
     out = [s.push(x) for x in ["quiet", "cry", "scratch", "cry", "scratch"]]
     assert out == ["quiet", "quiet", "quiet", "quiet", "quiet"]
+
+
+def test_min_run_zero_or_negative_clamps_to_one():
+    for bad in (0, -1):
+        s = LabelSmoother(min_run=bad)
+        seq = ["quiet", "cry", "other", "quiet"]
+        assert [s.push(x) for x in seq] == seq   # se comporta como min_run=1 (passthrough)
+
+
+def test_reverse_transition_back_to_quiet_is_debounced():
+    s = LabelSmoother(min_run=2)
+    # cierre de episodio: solo vuelve a quiet tras 2 frames quiet seguidos
+    out = [s.push(x) for x in ["quiet", "cry", "cry", "quiet", "quiet", "quiet"]]
+    assert out == ["quiet", "quiet", "cry", "cry", "quiet", "quiet"]

@@ -50,4 +50,14 @@ def test_run_file_commits_sustained_cry(tmp_path):
     det = StreamDetector(cfg=DetectConfig(smooth_min_run=2), yamnet=FakeYamnet())
     labels = []
     det.run_file(str(wav), lambda ev: labels.append(ev.label))
-    assert labels.count("cry") >= 1 and labels[-1] == "cry"
+    # min_run=2: el 1er frame fuerte aún es quiet; commit cry desde el 2do
+    assert labels == ["quiet", "quiet", "quiet", "cry", "cry"]
+
+
+def test_run_file_drops_trailing_partial_window(tmp_path):
+    wav = tmp_path / "partial.wav"
+    _write_wav(wav, [(0.0, 2.5)])   # 2.5s -> 2 ventanas de 1s, se descarta el 0.5s final
+    det = StreamDetector(cfg=DetectConfig(), yamnet=FakeYamnet())
+    labels = []
+    det.run_file(str(wav), lambda ev: labels.append(ev.label))
+    assert labels == ["quiet", "quiet"]

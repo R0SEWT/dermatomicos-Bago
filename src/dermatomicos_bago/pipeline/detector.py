@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 class StreamDetector:
     def __init__(self, cfg: DetectConfig | None = None,
-                 yamnet: "YamnetModel | None" = None,
+                 yamnet: YamnetModel | None = None,
                  scratch: Optional["ScratchHead"] = None,
                  smoother: LabelSmoother | None = None):
         self.cfg = cfg or DetectConfig()
@@ -31,17 +31,24 @@ class StreamDetector:
         conf = {"cry": cry, "scratch": scr}.get(label, 1.0)
         return Event(0.0, self.cfg.frame_seconds, label, conf)
 
-    def _emit(self, frame, t: float, on_event: Callable[[Event], None]) -> float:
+    def _emit(self, frame, t: float, on_event: Callable[[Event], None]):
+        """Clasifica + suaviza el frame y emite un Event en el tiempo `t` (el caller avanza `t`).
+
+        Nota: `score` es la confianza del frame *crudo* (instantánea), no necesariamente del
+        label comprometido por el smoother. Los features/severidad usan duraciones, no el score;
+        el score es solo para display de la UI. Si la UI necesita confianza por label suavizado,
+        habría que rastrearla en el smoother — fuera de alcance por ahora.
+        """
         raw = self.classify(frame)
         label = self.smoother.push(raw.label)
         on_event(Event(t, t + self.cfg.frame_seconds, label, raw.score))
-        return t + self.cfg.frame_seconds
 
     def run_live(self, on_event: Callable[[Event], None]):
         """Bloquea: captura del mic y emite Events suavizados (~1/seg). API para la UI."""
         t = 0.0
         for frame in mic_frames(self.cfg):
-            t = self._emit(frame, t, on_event)
+            self._emit(frame, t, on_event)
+            t += self.cfg.frame_seconds   # el mic entrega bloques de frame_seconds
 
     def run_file(self, path: str, on_event: Callable[[Event], None]):
         """Replay: corre el pipeline sobre un WAV grabado. Mismo stream de Events que run_live."""
@@ -50,4 +57,5 @@ class StreamDetector:
         hop_len = int(self.cfg.hop_seconds * self.cfg.sample_rate)
         t = 0.0
         for frame in sliding_windows(audio, frame_len, hop_len):
-            t = self._emit(frame, t, on_event)
+            self._emit(frame, t, on_event)
+            t += self.cfg.hop_seconds     # avanza por el hop, no por la longitud de ventana
