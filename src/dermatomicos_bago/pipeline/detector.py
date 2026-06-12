@@ -45,6 +45,7 @@ class StreamDetector:
 
     def run_live(self, on_event: Callable[[Event], None]):
         """Bloquea: captura del mic y emite Events suavizados (~1/seg). API para la UI."""
+        self.smoother.reset()
         t = 0.0
         for frame in mic_frames(self.cfg):
             self._emit(frame, t, on_event)
@@ -52,6 +53,7 @@ class StreamDetector:
 
     def run_file(self, path: str, on_event: Callable[[Event], None]):
         """Replay: corre el pipeline sobre un WAV grabado. Mismo stream de Events que run_live."""
+        self.smoother.reset()   # cada replay es independiente: no arrastrar estado entre WAVs
         audio = load_wav_16k(path, self.cfg.sample_rate)
         frame_len = int(self.cfg.frame_seconds * self.cfg.sample_rate)
         hop_len = int(self.cfg.hop_seconds * self.cfg.sample_rate)

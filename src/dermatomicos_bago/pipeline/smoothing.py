@@ -7,6 +7,12 @@ class LabelSmoother:
         self._candidate: str | None = None
         self._count = 0
 
+    def reset(self):
+        """Olvida el estado comprometido. Llamar al inicio de cada stream independiente."""
+        self.committed = None
+        self._candidate = None
+        self._count = 0
+
     def push(self, label: str) -> str:
         if self.committed is None:
             self.committed = label

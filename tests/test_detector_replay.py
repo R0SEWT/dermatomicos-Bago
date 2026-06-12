@@ -54,6 +54,21 @@ def test_run_file_commits_sustained_cry(tmp_path):
     assert labels == ["quiet", "quiet", "quiet", "cry", "cry"]
 
 
+def test_run_file_resets_smoother_between_streams(tmp_path):
+    cry = tmp_path / "cry.wav"
+    _write_wav(cry, [(0.5, 3)])    # 3s fuerte -> termina en cry
+    sil = tmp_path / "sil.wav"
+    _write_wav(sil, [(0.0, 3)])    # 3s silencio
+    det = StreamDetector(cfg=DetectConfig(smooth_min_run=2), yamnet=FakeYamnet())
+    first = []
+    det.run_file(str(cry), lambda ev: first.append(ev.label))
+    assert first[-1] == "cry"
+    # reusar el detector (sin recargar YAMNet) no debe arrastrar el cry al siguiente WAV
+    second = []
+    det.run_file(str(sil), lambda ev: second.append(ev.label))
+    assert second == ["quiet", "quiet", "quiet"]
+
+
 def test_run_file_drops_trailing_partial_window(tmp_path):
     wav = tmp_path / "partial.wav"
     _write_wav(wav, [(0.0, 2.5)])   # 2.5s -> 2 ventanas de 1s, se descarta el 0.5s final
