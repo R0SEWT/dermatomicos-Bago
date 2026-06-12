@@ -10,6 +10,7 @@ class DetectConfig:
     scratch_threshold: float = 0.50    # prob mínima de la cabeza de rascado
     quiet_rms: float = 0.005           # por debajo => quiet/sueño
     cry_class_names: tuple = ("Baby cry, infant cry", "Crying, sobbing")
+    smooth_min_run: int = 2            # frames consecutivos de un nuevo label para confirmarlo (1 = sin suavizado)
 
 
 @dataclass(frozen=True)
