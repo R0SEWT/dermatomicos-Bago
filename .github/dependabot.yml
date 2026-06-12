@@ -16,3 +16,9 @@ updates:
       python:
         patterns:
           - "*"
+    # setuptools<81 está pineado a propósito: tensorflow_hub importa pkg_resources,
+    # removido en setuptools 82. Bloquea solo 81+ (el bump roto); deja pasar
+    # parches/seguridad dentro de 80.x.
+    ignore:
+      - dependency-name: "setuptools"
+        versions: [">=81"]
