@@ -20,6 +20,9 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "ruff>=0.4"]
+# GPU: instala los wheels CUDA de NVIDIA junto a tensorflow.
+# Solo en máquinas con GPU NVIDIA: `uv sync --extra gpu`. No usar en laptop CPU-only.
+gpu = ["tensorflow[and-cuda]>=2.21.0"]
 
 [project.scripts]
 derma = "dermatomicos_bago.cli:main"
