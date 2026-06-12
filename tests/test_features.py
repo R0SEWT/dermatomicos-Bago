@@ -1,5 +1,5 @@
 from dermatomicos_bago.pipeline.events import Event
-from dermatomicos_bago.pipeline.features import aggregate, NightFeatures
+from dermatomicos_bago.pipeline.features import aggregate
 from dermatomicos_bago.config import FeatureConfig
 
 

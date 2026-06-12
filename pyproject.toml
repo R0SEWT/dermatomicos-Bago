@@ -21,6 +21,9 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "ruff>=0.4"]
 
+[project.scripts]
+derma = "dermatomicos_bago.cli:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -34,6 +37,7 @@ target-version = "py311"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["slow: descarga modelos / usa hardware"]
 
 [dependency-groups]
 dev = [
