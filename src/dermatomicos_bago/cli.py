@@ -2,6 +2,7 @@ import sys
 import time
 import pathlib
 from dataclasses import dataclass
+from typing import Protocol
 
 from .config import DetectConfig, FeatureConfig, SeverityConfig
 from .models.scratch import ScratchHead
@@ -50,6 +51,13 @@ def run_file_cmd(path: str):
     _finalize(labels)
 
 
+class _NightLike(Protocol):
+    """Estructura mínima que consume la tendencia: la satisfacen _Night y NightFeatures."""
+    cry_load: float
+    scratch_load: float
+    awakenings: int
+
+
 @dataclass
 class _Night:
     """Vista mínima de una noche leída de gold para alimentar el reporte de tendencia."""
@@ -71,7 +79,9 @@ def _load_real_nights(out_root: str = "data/gold", n: int | None = None) -> list
     ]
 
 
-def _emit_trend(nights, out_root: str = "data/gold", synthetic: bool = False) -> pathlib.Path:
+def _emit_trend(
+    nights: list[_NightLike], out_root: str = "data/gold", synthetic: bool = False
+) -> pathlib.Path:
     """Recompone la curva acumulada, escribe el reporte trend e imprime el sparkline."""
     cfg = SeverityConfig()
     loads = [(f.cry_load, f.scratch_load) for f in nights]
