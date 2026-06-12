@@ -32,6 +32,21 @@ def run_live(duration_s: float = 60.0):
     _finalize(labels)
 
 
+def run_file_cmd(path: str):
+    head_path = pathlib.Path("models/scratch_head.joblib")
+    scratch = ScratchHead.load(str(head_path)) if head_path.exists() else None
+    det = StreamDetector(scratch=scratch)
+    labels: list[str] = []
+    print(f"Replay de {path} ...")
+
+    def on_event(ev):
+        labels.append(ev.label)
+        print(f"[{ev.t_start:5.0f}s] {ev.label:8s} {ev.score:.2f}")
+
+    det.run_file(path, on_event)
+    _finalize(labels)
+
+
 def _finalize(labels: list[str]):
     frame_s = DetectConfig().frame_seconds
     episodes = frames_to_episodes(labels, frame_s)
@@ -49,8 +64,13 @@ def main():
     cmd = sys.argv[1] if len(sys.argv) > 1 else "live"
     if cmd == "live":
         run_live(float(sys.argv[2]) if len(sys.argv) > 2 else 60.0)
+    elif cmd == "replay":
+        if len(sys.argv) < 3:
+            print("uso: derma replay <archivo.wav>")
+            sys.exit(1)
+        run_file_cmd(sys.argv[2])
     else:
-        print("uso: derma live [segundos]")
+        print("uso: derma [live [segundos] | replay <archivo.wav>]")
         sys.exit(1)
 
 
