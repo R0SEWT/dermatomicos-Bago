@@ -8,6 +8,7 @@ a non-prescribed mention from which a reminder could ever be derived. Reminders
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 
 from .enums import TreatmentSource
 from .errors import NonPrescribedLinkError
@@ -17,7 +18,13 @@ from .provenance import Provenance
 
 @dataclass(frozen=True)
 class TreatmentMention:
-    """A neutrally-recorded treatment the caregiver mentioned."""
+    """A neutrally-recorded treatment the caregiver mentioned.
+
+    ``effective_date`` is the day the mention is *about*, resolved from a
+    relative expression in the message ("hace 3 días le puse manzanilla"). It
+    defaults to ``None`` (consumers fall back to ``provenance.recorded_at``) and
+    never overrides provenance, which stays the audit record.
+    """
 
     id: MentionId
     dependent_id: DependentId
@@ -25,6 +32,7 @@ class TreatmentMention:
     text: str
     provenance: Provenance
     linked_plan_item_id: PlanItemId | None = None
+    effective_date: date | None = None
 
     def __post_init__(self) -> None:
         if (

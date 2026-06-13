@@ -1,6 +1,6 @@
 """Deterministic pattern detector: lag/repetition, gaps, and no causal language."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from lumi.domain.checkin import Observation
 from lumi.domain.enums import ActorKind, ConfirmationState, TreatmentSource
@@ -17,11 +17,17 @@ def _day(offset: int) -> datetime:
     return _BASE + timedelta(days=offset)
 
 
-def _obs(category: str, value: str, offset: int) -> Observation:
+def _obs(
+    category: str,
+    value: str,
+    offset: int,
+    *,
+    effective_on: date | None = None,
+) -> Observation:
     prov = Provenance(
         Actor(ActorKind.CAREGIVER, "c"), _day(offset), ConfirmationState.CONFIRMED
     )
-    return Observation("o", "dep", category, value, prov)
+    return Observation("o", "dep", category, value, prov, effective_date=effective_on)
 
 
 def test_repeated_after_fires_on_lagged_exposure():
@@ -67,6 +73,58 @@ def test_non_prescribed_mention_counts_as_exposure():
     assert len(patterns) == 1
     assert patterns[0].template is PatternTemplate.REPEATED_AFTER
     assert "crema de hierbas" in patterns[0].rendered
+
+
+def test_observation_effective_date_drives_pattern_lag():
+    observations = (
+        _obs("exposure", "jabon nuevo", 10, effective_on=_day(0).date()),
+        _obs("scratching", "mucho rascado", 1),
+        _obs("exposure", "jabon nuevo", 20, effective_on=_day(3).date()),
+        _obs("scratching", "mucho rascado", 4),
+    )
+
+    patterns = detect_candidate_patterns(observations, (), provenance=_PROV)
+
+    assert len(patterns) == 1
+    assert patterns[0].template is PatternTemplate.REPEATED_AFTER
+
+
+def test_non_prescribed_effective_date_drives_pattern_lag():
+    mentions = (
+        TreatmentMention(
+            "m1",
+            "dep",
+            TreatmentSource.NON_PRESCRIBED,
+            "crema de hierbas",
+            Provenance(
+                Actor(ActorKind.CAREGIVER, "c"),
+                _day(10),
+                ConfirmationState.CONFIRMED,
+            ),
+            effective_date=_day(0).date(),
+        ),
+        TreatmentMention(
+            "m2",
+            "dep",
+            TreatmentSource.NON_PRESCRIBED,
+            "crema de hierbas",
+            Provenance(
+                Actor(ActorKind.CAREGIVER, "c"),
+                _day(20),
+                ConfirmationState.CONFIRMED,
+            ),
+            effective_date=_day(3).date(),
+        ),
+    )
+    observations = (
+        _obs("irritability", "irritable", 1),
+        _obs("irritability", "irritable", 4),
+    )
+
+    patterns = detect_candidate_patterns(observations, mentions, provenance=_PROV)
+
+    assert len(patterns) == 1
+    assert patterns[0].template is PatternTemplate.REPEATED_AFTER
 
 
 def test_missing_info_when_discomfort_without_exposure():
