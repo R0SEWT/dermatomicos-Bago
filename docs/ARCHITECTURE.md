@@ -7,6 +7,15 @@ Advanced Messaging is the production WhatsApp target and Azure SQL Database is
 the production transactional store. Compute, authorization/recovery, clinical
 content, and retention still require decisions before production.
 
+## Diagram
+
+![Lumi architecture](diagrams/lumi_architecture.png)
+
+Rendered from `scripts/render_architecture.py` (`uv run python
+scripts/render_architecture.py`). Solid edges are implemented today; dashed
+edges are the accepted production target; dotted edges are cross-cutting
+identity/secrets.
+
 ## Design principles
 
 1. Safety invariants live in deterministic code.
