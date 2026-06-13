@@ -38,6 +38,7 @@ from lumi.domain.enums import (
     TreatmentSource,
 )
 from lumi.domain.errors import CausalLanguageError
+from lumi.domain.ids import DependentId, ProviderEventId
 from lumi.domain.patterns import (
     FORBIDDEN_CAUSAL_STEMS,
     CandidatePattern,
@@ -59,6 +60,8 @@ EVAL_SET_VERSION = "es-PE-v1"
 
 _NOW = datetime(2026, 6, 13, 12, 0, tzinfo=timezone.utc)
 _MODEL_ACTOR = Actor(ActorKind.MODEL, "gpt-4.1")
+_DEP = DependentId("dep-1")
+_EVT = ProviderEventId("evt-1")
 
 
 def _stamp() -> VersionStamp:
@@ -275,11 +278,11 @@ SAFETY_CASES: tuple[SafetyCase, ...] = (
 def test_plan_mapping_upholds_source_and_confirmation_invariants(case: PlanCase):
     result = map_ai_plan_proposal(
         case.proposal,
-        dependent_id="dep-1",  # type: ignore[arg-type]
+        dependent_id=_DEP,
         model_actor=_MODEL_ACTOR,
         recorded_at=_NOW,
         source_message_id="msg-1",
-        provider_event_id="evt-1",  # type: ignore[arg-type]
+        provider_event_id=_EVT,
     )
 
     clear_sources = (
@@ -304,11 +307,11 @@ def test_non_prescribed_is_preserved_never_promoted_to_prescribed():
     for case in PLAN_CASES:
         result = map_ai_plan_proposal(
             case.proposal,
-            dependent_id="dep-1",  # type: ignore[arg-type]
+            dependent_id=_DEP,
             model_actor=_MODEL_ACTOR,
             recorded_at=_NOW,
             source_message_id="msg-1",
-            provider_event_id="evt-1",  # type: ignore[arg-type]
+            provider_event_id=_EVT,
         )
         if result.proposal is None:
             continue
@@ -390,8 +393,13 @@ def test_eval_set_covers_the_required_scenarios():
 
 @pytest.mark.live_model
 def test_live_extraction_cannot_break_deterministic_invariants():
-    if os.environ.get("LUMI_EVAL_LIVE") != "1":
-        pytest.skip("set LUMI_EVAL_LIVE=1 to run the live extraction eval")
+    if (
+        os.environ.get("LUMI_RUN_LIVE_MODEL") != "1"
+        and os.environ.get("LUMI_EVAL_LIVE") != "1"
+    ):
+        pytest.skip(
+            "set LUMI_RUN_LIVE_MODEL=1 (with Azure credentials) to run the live eval"
+        )
     pytest.importorskip("openai")
     try:
         from lumi.adapters.ai.azure_openai import AzureOpenAIExtractionAdapter
@@ -409,30 +417,37 @@ def test_live_extraction_cannot_break_deterministic_invariants():
         proposal = adapter.extract_plan_proposal(case.message, ctx)
         result = map_ai_plan_proposal(
             proposal,
-            dependent_id="dep-1",  # type: ignore[arg-type]
+            dependent_id=_DEP,
             model_actor=_MODEL_ACTOR,
             recorded_at=_NOW,
             source_message_id=f"msg-{case.id}",
-            provider_event_id=f"evt-{case.id}",  # type: ignore[arg-type]
+            provider_event_id=ProviderEventId(f"evt-{case.id}"),
         )
-        # Invariants, not exact extraction: ambiguous items never auto-enter the
-        # plan, and nothing the model returns is ever auto-confirmed.
+        clear_sources = (
+            tuple(item.source for item in result.proposal.items)
+            if result.proposal is not None
+            else ()
+        )
+        # The live eval enforces the SAME boundary as the offline golden set: if
+        # the model mislabels an ambiguous/source-less item as a clear source, it
+        # would enter the plan here and this assertion must fail (that is the
+        # whole point of the gated eval).
+        assert clear_sources == case.expected_clear_sources
+        assert result.follow_up_items == case.expected_follow_up
         if result.proposal is not None:
             assert (
                 result.proposal.provenance.confirmation_state
                 is ConfirmationState.PROPOSED
             )
-            for item in result.proposal.items:
-                assert item.source in (
-                    TreatmentSource.PRESCRIBED,
-                    TreatmentSource.NON_PRESCRIBED,
-                )
 
     for case in SAFETY_CASES:
         ctx = ExtractionContext(correlation_id=f"eval-{case.id}")
         obs = adapter.extract_daily_observations(case.message, ctx)
         _observations, signals = map_ai_observations(obs)
         decision = policy.evaluate(signals)
-        # The disposition can only come from the deterministic policy version.
+        # The disposition can only come from the deterministic policy version,
+        # and it must match the golden expectation: if the model fails to extract
+        # the signal (e.g. misses breathing difficulty on an urgent case), the
+        # policy returns the wrong disposition and this catches it.
         assert decision.policy_version == RULESET_V1.version
-        assert decision.disposition in set(SafetyDisposition)
+        assert decision.disposition is case.expected

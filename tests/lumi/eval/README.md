@@ -23,20 +23,25 @@ A coverage test guards against silent shrinkage of the set.
 # offline (default, CI) — no model, no system libs
 uv run pytest tests/lumi/eval -q -m "not live_model"
 
-# live — sends raw es-PE text to the real Azure adapter and asserts the SAME
-# invariants survive whatever the model returns (never asserts exact extraction)
-LUMI_EVAL_LIVE=1 uv run --extra azure pytest tests/lumi/eval -m live_model
+# live — sends raw es-PE text to the real Azure adapter and asserts each case's
+# golden boundary survives whatever the model returns (catches mislabels and
+# missed red-flag signals)
+LUMI_RUN_LIVE_MODEL=1 uv run --extra azure pytest tests/lumi/eval -m live_model
 ```
 
-The live test is skipped unless `LUMI_EVAL_LIVE=1` **and** the Azure adapter is
+The live test is skipped unless `LUMI_RUN_LIVE_MODEL=1` (the existing live-model
+convention; `LUMI_EVAL_LIVE=1` is also accepted) **and** the Azure adapter is
 configured (`AZURE_AI_ENDPOINT`/`AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT`).
 
-## Why invariants, not golden outputs
+## Offline vs live
 
-The safety guarantees do not depend on a live model, so the offline layer tests
-them without one. The live layer deliberately asserts only that the model
-**cannot break** the deterministic guarantees — it never pins exact extraction,
-which would be brittle and would conflate model quality with safety.
+The safety guarantees do not depend on a live model, so the **offline** layer
+tests them without one (the golden cases carry the proposal the model would
+emit). The **live** layer then asserts each case's *safety-relevant boundary*
+holds end-to-end on the real model: the mapped clear sources / follow-up and the
+red-flag disposition must match `case.expected`. It pins the boundary, not every
+extracted field — a mislabelled ambiguous item or a missed urgent signal fails
+the eval, which is exactly the regression an eval gate should catch.
 
 ## Versioning
 
