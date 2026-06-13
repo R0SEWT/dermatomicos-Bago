@@ -7,13 +7,17 @@ FROM python:3.12-slim
 WORKDIR /app
 
 # Lumi runtime deps only (mirror of the [web] + [azure] extras in pyproject).
+# jinja2 is required at import time: adapters/reports/__init__ eagerly imports the
+# report renderer (pdf.py imports jinja2). weasyprint stays out — its import is
+# lazy and the web demo renders the report as HTML, not PDF.
 RUN pip install --no-cache-dir \
     "fastapi>=0.115" \
     "uvicorn[standard]>=0.30" \
     "python-dotenv>=1.0" \
     "openai>=1.42" \
     "azure-identity>=1.17" \
-    "pydantic>=2.8"
+    "pydantic>=2.8" \
+    "jinja2>=3.1"
 
 # Just the Lumi package (includes api/static/index.html). No data/, models/, tests/.
 COPY src/lumi ./lumi
