@@ -1,0 +1,9 @@
+{
+  "subscription_id": "b893ca12-45bd-47b3-a0ac-081a74a9d4f6",
+  "resource_group": "rg-team-09",
+  "ai_services_account": "ais-team09-cg65uw",
+  "ai_deployment": "gpt-4.1",
+  "ai_project": "aip-team09",
+  "storage_account": "stteam09cg65uw",
+  "key_vault": "kv-team09-cg65uw"
+}

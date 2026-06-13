@@ -19,20 +19,21 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "ruff>=0.4"]
+azure = ["openai>=1.42", "azure-identity>=1.17", "pydantic>=2.8"]
 # GPU: instala los wheels CUDA de NVIDIA junto a tensorflow.
 # Solo en máquinas con GPU NVIDIA: `uv sync --extra gpu`. No usar en laptop CPU-only.
 gpu = ["tensorflow[and-cuda]>=2.21.0"]
 
 [project.scripts]
 derma = "dermatomicos_bago.cli:main"
+lumi = "lumi.api.cli:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/dermatomicos_bago"]
+packages = ["src/dermatomicos_bago", "src/lumi"]
 
 [tool.ruff]
 line-length = 100
@@ -40,9 +41,14 @@ target-version = "py311"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["slow: descarga modelos / usa hardware"]
+markers = [
+    "slow: descarga modelos / usa hardware",
+    "live_model: hits live Azure OpenAI; skipped unless explicitly enabled",
+]
 
 [dependency-groups]
 dev = [
+    "pytest>=8.0",
     "pytest-timeout>=2.4.0",
+    "ruff>=0.4",
 ]
