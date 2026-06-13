@@ -1,0 +1,18 @@
+# Keep the build context tiny: only src/lumi is COPYed into the image.
+.git
+.venv
+data
+models
+tests
+docs
+scripts
+.beads
+.playwright-mcp
+src/dermatomicos_bago
+**/__pycache__
+**/*.pyc
+.env
+*.md
+.pytest_cache
+.ruff_cache
+uv.lock
