@@ -1,9 +1,11 @@
 """Web demo API: snapshot, chat routing, report, reset (AI off, no network)."""
 
 import pytest
-from starlette.testclient import TestClient
 
-from lumi.api.web import create_app
+pytest.importorskip("fastapi", reason="requires the optional 'web' extra")
+from starlette.testclient import TestClient  # noqa: E402
+
+from lumi.api.web import create_app  # noqa: E402
 
 
 @pytest.fixture
