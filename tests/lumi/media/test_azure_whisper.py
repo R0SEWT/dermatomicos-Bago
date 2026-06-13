@@ -83,14 +83,16 @@ def test_settings_require_endpoint_and_deployment(monkeypatch):
 
 def test_settings_from_env_reuses_azure_surface_without_storing_key(monkeypatch):
     monkeypatch.delenv("LUMI_VOICE_LANGUAGE", raising=False)
-    monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com/")
+    # an endpoint carrying the chat extractor's /openai/v1 suffix is normalised
+    monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com/openai/v1")
     monkeypatch.setenv("AZURE_OPENAI_TRANSCRIBE_DEPLOYMENT", "whisper")
     monkeypatch.setenv("AZURE_OPENAI_API_KEY", "must-not-be-read")
 
     settings = AzureWhisperSettings.from_env()
 
     assert settings.deployment == "whisper"
-    assert settings.base_url.endswith("/openai/v1/")
+    # whisper uses the classic deployment-scoped path -> the v1 suffix is stripped
+    assert settings.azure_endpoint == "https://r.openai.azure.com"
     assert settings.use_api_key is True
     assert settings.language == "es"
     assert not hasattr(settings, "api_key")  # the key is never stored on the settings

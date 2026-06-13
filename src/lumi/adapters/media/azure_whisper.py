@@ -1,10 +1,14 @@
-"""Speech-to-text via Azure OpenAI (Whisper / gpt-4o-transcribe). Extra ``[azure]``.
+"""Speech-to-text via Azure OpenAI Whisper. Extra ``[azure]``.
 
-Reuses the same Azure OpenAI v1 surface and credentials as the extraction
-adapter: Microsoft Entra ID by default (managed identity / ``DefaultAzureCredential``),
-with an explicit ``AZURE_OPENAI_API_KEY`` fallback for local demos. No
-credentials or audio are ever persisted or logged. The ``openai``/``azure-identity``
-imports are deferred so the core never imports them.
+Reuses the same Azure resource and credentials as the extraction adapter:
+Microsoft Entra ID by default (managed identity / ``DefaultAzureCredential``),
+with an explicit ``AZURE_OPENAI_API_KEY`` fallback for local demos. Whisper is
+served on Azure's classic *deployment-scoped* audio path
+(``/openai/deployments/{deployment}/audio/transcriptions``), not the ``/openai/v1``
+surface the chat extractor uses — so this adapter drives the ``AzureOpenAI``
+client (with an ``api-version``) instead. No credentials or audio are ever
+persisted or logged; the ``openai``/``azure-identity`` imports are deferred so the
+core never imports them.
 
 Transcription is the *only* thing this does; the recovered text is untrusted and
 flows into the same extraction/check-in path as a typed message.
@@ -38,6 +42,7 @@ class AzureWhisperSettings:
     deployment: str
     use_api_key: bool = False
     language: str = "es"
+    api_version: str = "2024-06-01"
     timeout_seconds: float = 30.0
     max_retries: int = 2
 
@@ -57,16 +62,22 @@ class AzureWhisperSettings:
             deployment=deployment,
             use_api_key=bool(os.environ.get("AZURE_OPENAI_API_KEY")),
             language=os.environ.get("LUMI_VOICE_LANGUAGE", "es"),
+            api_version=os.environ.get(
+                "AZURE_OPENAI_TRANSCRIBE_API_VERSION", "2024-06-01"
+            ),
             timeout_seconds=float(os.environ.get("LUMI_AI_TIMEOUT_SECONDS", "30")),
             max_retries=int(os.environ.get("LUMI_AI_MAX_RETRIES", "2")),
         )
 
     @property
-    def base_url(self) -> str:
+    def azure_endpoint(self) -> str:
+        """Bare resource endpoint. ``AzureOpenAI`` appends the deployment-scoped
+        audio path itself, so the ``/openai/v1`` suffix the chat extractor may use
+        is stripped here."""
         endpoint = self.endpoint.rstrip("/")
         if endpoint.endswith("/openai/v1"):
-            return f"{endpoint}/"
-        return f"{endpoint}/openai/v1/"
+            endpoint = endpoint[: -len("/openai/v1")]
+        return endpoint
 
 
 class AzureWhisperTranscriber:
@@ -75,25 +86,30 @@ class AzureWhisperTranscriber:
     def __init__(self, settings: AzureWhisperSettings, client: Any | None = None) -> None:
         self._settings = settings
         if client is None:
-            from openai import OpenAI
+            from openai import AzureOpenAI
 
-            credential = os.environ.get("AZURE_OPENAI_API_KEY")
-            if credential is None:
+            kwargs: dict[str, Any] = {
+                "azure_endpoint": settings.azure_endpoint,
+                "api_version": settings.api_version,
+                "timeout": settings.timeout_seconds,
+                "max_retries": settings.max_retries,
+            }
+            api_key = os.environ.get("AZURE_OPENAI_API_KEY")
+            if api_key is not None:
+                client = AzureOpenAI(api_key=api_key, **kwargs)
+            else:
                 from azure.identity import (
                     DefaultAzureCredential,
                     get_bearer_token_provider,
                 )
 
-                credential = get_bearer_token_provider(
-                    DefaultAzureCredential(),
-                    "https://cognitiveservices.azure.com/.default",
+                client = AzureOpenAI(
+                    azure_ad_token_provider=get_bearer_token_provider(
+                        DefaultAzureCredential(),
+                        "https://cognitiveservices.azure.com/.default",
+                    ),
+                    **kwargs,
                 )
-            client = OpenAI(
-                base_url=settings.base_url,
-                api_key=credential,
-                timeout=settings.timeout_seconds,
-                max_retries=settings.max_retries,
-            )
         self._client = client
 
     def transcribe(self, clip: VoiceClip) -> Transcript:
