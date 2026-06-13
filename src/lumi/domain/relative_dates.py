@@ -41,6 +41,11 @@ _WORD_NUMBERS: dict[str, int] = {
     "seis": 6, "siete": 7, "ocho": 8, "nueve": 9, "diez": 10,
 }
 
+# Relative anchors are for recent caregiver history, not arbitrary archival
+# dates. Bounding numeric input also prevents malformed text from overflowing
+# ``date - timedelta``.
+_MAX_RELATIVE_DAYS = 365
+
 _DAYS = "|".join(_WEEKDAYS)
 _NUMS = "|".join(_WORD_NUMBERS)
 
@@ -78,6 +83,8 @@ def resolve_relative_date(text: str, reference_date: date) -> date | None:
     if hace:
         token = hace.group(1)
         days = int(token) if token.isdigit() else _WORD_NUMBERS[token]
+        if days > _MAX_RELATIVE_DAYS:
+            return None
         return reference_date - timedelta(days=days)
 
     if _ANTEAYER.search(normalized):

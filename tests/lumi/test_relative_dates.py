@@ -65,6 +65,11 @@ def test_returns_none_when_unsupported(text):
     assert resolve_relative_date(text, _REF) is None
 
 
+@pytest.mark.parametrize("days", ("366", "999999"))
+def test_numeric_offset_outside_recent_history_returns_none(days):
+    assert resolve_relative_date(f"hace {days} dias", _REF) is None
+
+
 def test_result_is_never_in_the_future():
     for text in ("hoy", "ayer", "anteayer", "hace 2 días", "el lunes pasado"):
         assert resolve_relative_date(text, _REF) <= _REF

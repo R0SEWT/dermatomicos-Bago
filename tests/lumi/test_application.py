@@ -146,6 +146,19 @@ def test_checkin_dates_observations_from_relative_expression(app, store):
     assert store.observations[0].effective_date == date(2026, 6, 11)
 
 
+def test_report_evolution_uses_relative_event_date(app):
+    _, dependent = _onboard(app)
+    app.record_checkin(RecordCheckIn(
+        dependent, "Anteayer se rasco bastante",
+        observations=(("scratching", "bastante"),),
+        provider_event_id="event-checkin",
+    ))
+
+    report = app.build_clinician_report(BuildClinicianReport(dependent))
+
+    assert report.symptom_sleep_evolution[0].on == date(2026, 6, 11)
+
+
 def test_checkin_without_relative_expression_leaves_effective_date_none(app, store):
     _, dependent = _onboard(app)
     app.record_checkin(RecordCheckIn(
