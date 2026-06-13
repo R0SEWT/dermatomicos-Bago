@@ -52,13 +52,12 @@ class VersionedRedFlagPolicy:
             )
 
         disposition = max(matched, key=lambda r: DISPOSITION_RANK[r.disposition]).disposition
-        # deterministic, order-independent message set for matched rules
-        messages = tuple(
-            self._ruleset.copy_for(rule.approved_copy_key) for rule in matched
-        )
+        matched_rule_ids = tuple(sorted({rule.id for rule in matched}))
+        copy_keys = sorted({rule.approved_copy_key for rule in matched})
+        messages = tuple(self._ruleset.copy_for(key) for key in copy_keys)
         return SafetyEvaluation(
             disposition=disposition,
-            matched_rule_ids=tuple(rule.id for rule in matched),
+            matched_rule_ids=matched_rule_ids,
             messages=messages,
             policy_version=self._ruleset.version,
         )

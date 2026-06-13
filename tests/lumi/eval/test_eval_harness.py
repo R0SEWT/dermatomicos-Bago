@@ -113,6 +113,7 @@ class PlanCase:
     proposal: AIPlanProposal
     expected_clear_sources: tuple[TreatmentSource, ...]
     expected_follow_up: tuple[str, ...]
+    expected_non_prescribed: tuple[str, ...] = ()
 
 
 PLAN_CASES: tuple[PlanCase, ...] = (
@@ -135,9 +136,10 @@ PLAN_CASES: tuple[PlanCase, ...] = (
         category="traditional_remedy",
         message="Le puse panitos de manzanilla que me recomendo mi mama para la piel.",
         proposal=_plan(_item("Panitos de manzanilla", TreatmentSource.NON_PRESCRIBED)),
-        # Recorded neutrally as non-prescribed — never promoted to the plan.
-        expected_clear_sources=(TreatmentSource.NON_PRESCRIBED,),
+        # Routed to a neutral mention — never placed in the confirmable plan.
+        expected_clear_sources=(),
         expected_follow_up=(),
+        expected_non_prescribed=("Panitos de manzanilla",),
     ),
     PlanCase(
         id="ambiguous_source_drops_to_followup",
@@ -294,6 +296,7 @@ def test_plan_mapping_upholds_source_and_confirmation_invariants(case: PlanCase)
     # Ambiguous / source-less items never enter the plan; they require caregiver
     # clarification instead.
     assert result.follow_up_items == case.expected_follow_up
+    assert result.non_prescribed_items == case.expected_non_prescribed
     # Nothing the model proposes is ever auto-confirmed.
     if result.proposal is not None:
         assert (
@@ -302,8 +305,8 @@ def test_plan_mapping_upholds_source_and_confirmation_invariants(case: PlanCase)
         )
 
 
-def test_non_prescribed_is_preserved_never_promoted_to_prescribed():
-    """A traditional remedy stays non_prescribed (so it can never get reminders)."""
+def test_non_prescribed_is_routed_outside_confirmable_plan():
+    """Traditional remedies become neutral mentions, never plan items."""
     for case in PLAN_CASES:
         result = map_ai_plan_proposal(
             case.proposal,
@@ -313,13 +316,12 @@ def test_non_prescribed_is_preserved_never_promoted_to_prescribed():
             source_message_id="msg-1",
             provider_event_id=_EVT,
         )
-        if result.proposal is None:
-            continue
-        for proposed, mapped in zip(
-            [i for i in case.proposal.items if not i.ambiguous_source and i.source],
-            result.proposal.items,
-        ):
-            assert mapped.source is proposed.source  # exact, no promotion
+        assert result.non_prescribed_items == case.expected_non_prescribed
+        if result.proposal is not None:
+            assert all(
+                item.source is TreatmentSource.PRESCRIBED
+                for item in result.proposal.items
+            )
 
 
 @pytest.mark.parametrize("case", SAFETY_CASES, ids=lambda c: c.id)
@@ -434,6 +436,7 @@ def test_live_extraction_cannot_break_deterministic_invariants():
         # whole point of the gated eval).
         assert clear_sources == case.expected_clear_sources
         assert result.follow_up_items == case.expected_follow_up
+        assert result.non_prescribed_items == case.expected_non_prescribed
         if result.proposal is not None:
             assert (
                 result.proposal.provenance.confirmation_state

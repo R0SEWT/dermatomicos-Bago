@@ -8,8 +8,8 @@ from ..adapters.reports.markdown import render_clinician_report
 from ..application.ai_mapping import map_ai_observations, map_ai_plan_proposal
 from ..application.commands import (
     BuildClinicianReport, ConfirmMedicalPlanVersion, DeleteCaregiverData,
-    ExportCaregiverData, ProposeMedicalPlan, RecordCheckIn, RegisterCaregiver,
-    RegisterDependent,
+    ExportCaregiverData, ProposeMedicalPlan, RecordCheckIn,
+    RecordTreatmentMention, RegisterCaregiver, RegisterDependent,
 )
 from ..application.service import LumiApplication
 from ..domain.enums import ActorKind, ConfirmationState, TreatmentSource
@@ -88,16 +88,46 @@ class ConversationRouter:
                 source_message_id=str(message.provider_event_id),
                 provider_event_id=message.provider_event_id,
             )
+            for index, item in enumerate(mapped.non_prescribed_items):
+                self._app.record_treatment_mention(RecordTreatmentMention(
+                    dependent_id=dependent_id,
+                    source=TreatmentSource.NON_PRESCRIBED,
+                    text=item,
+                    source_message_id=str(message.provider_event_id),
+                    provider_event_id=self._event(
+                        message, f"ai-non-prescribed-{index}"
+                    ),
+                ))
             if mapped.proposal is None:
-                return "Necesito confirmar la fuente de: " + "; ".join(mapped.follow_up_items)
+                parts = []
+                if mapped.non_prescribed_items:
+                    parts.append(
+                        "Registre como no prescrito: "
+                        + "; ".join(mapped.non_prescribed_items)
+                        + "."
+                    )
+                if mapped.follow_up_items:
+                    parts.append(
+                        "Necesito confirmar la fuente de: "
+                        + "; ".join(mapped.follow_up_items)
+                        + "."
+                    )
+                return " ".join(parts) or "No encontre indicaciones para proponer."
             session.proposal_ref = self._app.propose_medical_plan(ProposeMedicalPlan(
                 mapped.proposal, self._event(message, "ai-proposal")
             ))
-            suffix = (
-                " Fuente por confirmar: " + "; ".join(mapped.follow_up_items)
-                if mapped.follow_up_items else ""
-            )
-            return f"Propuesta IA guardada. Usa /confirm.{suffix}"
+            suffixes = []
+            if mapped.non_prescribed_items:
+                suffixes.append(
+                    "Registre por separado como no prescrito: "
+                    + "; ".join(mapped.non_prescribed_items)
+                    + "."
+                )
+            if mapped.follow_up_items:
+                suffixes.append(
+                    "Fuente por confirmar: " + "; ".join(mapped.follow_up_items) + "."
+                )
+            return " ".join(("Propuesta IA guardada. Usa /confirm.", *suffixes))
         if command == "/plan":
             raw_items = tuple(part.strip() for part in argument.split("|") if part.strip())
             if not raw_items:

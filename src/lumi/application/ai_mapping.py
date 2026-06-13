@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from ..domain.enums import ConfirmationState
+from ..domain.enums import ConfirmationState, TreatmentSource
 from ..domain.ids import DependentId, ProviderEventId
 from ..domain.plan import PlanProposal, ProposedPlanItem as DomainProposedPlanItem
 from ..domain.provenance import Actor, Provenance
@@ -17,6 +17,7 @@ from ..ports.ai import AIPlanProposal, ObservationProposal
 class PlanMappingResult:
     proposal: PlanProposal | None
     follow_up_items: tuple[str, ...]
+    non_prescribed_items: tuple[str, ...]
 
 
 def map_ai_plan_proposal(
@@ -28,7 +29,12 @@ def map_ai_plan_proposal(
     source_message_id: str,
     provider_event_id: ProviderEventId,
 ) -> PlanMappingResult:
-    """Exclude ambiguous items; no AI DTO can activate or confirm a plan."""
+    """Partition AI items without letting untrusted data activate a plan.
+
+    Only clearly prescribed items enter the confirmable proposal. Clear
+    non-prescribed items are returned separately so the caller can persist
+    them as neutral treatment mentions, while ambiguous items require follow-up.
+    """
     clear = tuple(
         DomainProposedPlanItem(
             source=item.source,
@@ -36,7 +42,13 @@ def map_ai_plan_proposal(
             schedule_hint=item.cadence_hint,
         )
         for item in proposal.items
-        if not item.ambiguous_source and item.source is not None
+        if not item.ambiguous_source and item.source is TreatmentSource.PRESCRIBED
+    )
+    non_prescribed = tuple(
+        item.description
+        for item in proposal.items
+        if not item.ambiguous_source
+        and item.source is TreatmentSource.NON_PRESCRIBED
     )
     follow_up = tuple(
         item.description
@@ -44,7 +56,7 @@ def map_ai_plan_proposal(
         if item.ambiguous_source or item.source is None
     )
     if not clear:
-        return PlanMappingResult(None, follow_up)
+        return PlanMappingResult(None, follow_up, non_prescribed)
     provenance = Provenance(
         actor=model_actor,
         recorded_at=recorded_at,
@@ -52,7 +64,11 @@ def map_ai_plan_proposal(
         source_message_id=source_message_id,
         provider_event_id=provider_event_id,
     )
-    return PlanMappingResult(PlanProposal(dependent_id, clear, provenance), follow_up)
+    return PlanMappingResult(
+        PlanProposal(dependent_id, clear, provenance),
+        follow_up,
+        non_prescribed,
+    )
 
 
 def map_ai_observations(

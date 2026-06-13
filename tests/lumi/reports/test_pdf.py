@@ -11,6 +11,7 @@ from datetime import date, datetime
 
 import pytest
 
+from lumi.adapters.reports.markdown import render_clinician_report
 from lumi.adapters.reports.pdf import (
     render_clinician_report_html,
     render_clinician_report_pdf,
@@ -20,6 +21,7 @@ from lumi.domain.enums import (
     ConfirmationState,
     TreatmentSource,
 )
+from lumi.domain.patterns import CandidatePattern, PatternTemplate
 from lumi.domain.plan import PlanItem
 from lumi.domain.provenance import Actor, Provenance
 from lumi.domain.report import (
@@ -73,7 +75,13 @@ def _report() -> ClinicianReport:
                 observed_count=3,
             ),
         ),
-        candidate_patterns=(),
+        candidate_patterns=(
+            CandidatePattern.build(
+                PatternTemplate.REPEATED_AFTER,
+                {"symptom": "el rascado", "exposure": "jabon nuevo"},
+                prov,
+            ),
+        ),
         non_prescribed_items=(
             NonPrescribedLine(mention_id="m-9", text="Crema de la abuela"),
         ),
@@ -105,6 +113,13 @@ def test_html_keeps_non_prescribed_separate_from_plan():
     plan_section = html.split("Productos o remedios no prescritos")[0]
     assert "Crema de la abuela" not in plan_section
     assert "Crema de la abuela" in html
+
+
+def test_markdown_renders_candidate_patterns():
+    markdown = render_clinician_report(_report())
+
+    assert "## Patrones a validar" in markdown
+    assert "se repitio despues de jabon nuevo" in markdown
 
 
 def test_html_has_no_causal_or_diagnostic_language():

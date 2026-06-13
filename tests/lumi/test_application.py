@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import date
 
 import pytest
@@ -13,6 +14,8 @@ from lumi.domain.errors import IdempotencyViolation, ProposalCannotActivateError
 from lumi.domain.plan import PlanProposal, ProposedPlanItem
 from lumi.domain.provenance import Actor, ExternalIdentity, Provenance
 from lumi.domain.signals import ObservationSignals
+from lumi.safety.policy import VersionedRedFlagPolicy
+from lumi.safety.rulesets.v1 import RULESET_V1
 
 
 def _onboard(app):
@@ -89,6 +92,17 @@ def test_checkin_uses_highest_deterministic_disposition(app, store):
     assert result.safety.disposition is SafetyDisposition.URGENT_CARE
     assert set(result.safety.matched_rule_ids) == {"breathing", "high_fever"}
     assert len(store.checkins) == 1
+
+
+def test_safety_policy_output_is_order_independent_and_deduplicated():
+    signals = ObservationSignals(breathing_difficulty=True, lethargy=True)
+    forward = VersionedRedFlagPolicy(RULESET_V1).evaluate(signals)
+    reversed_rules = replace(RULESET_V1, rules=tuple(reversed(RULESET_V1.rules)))
+    backward = VersionedRedFlagPolicy(reversed_rules).evaluate(signals)
+
+    assert forward == backward
+    assert forward.matched_rule_ids == ("breathing", "lethargy")
+    assert len(forward.messages) == 1
 
 
 def test_end_to_end_report_export_and_delete(app, store):

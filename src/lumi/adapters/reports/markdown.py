@@ -39,6 +39,10 @@ def render_clinician_report(report: ClinicianReport) -> str:
     )
     if not report.symptom_sleep_evolution:
         lines.append("- Sin datos")
+    lines.extend(["", "## Patrones a validar"])
+    lines.extend(f"- {pattern.rendered}" for pattern in report.candidate_patterns)
+    if not report.candidate_patterns:
+        lines.append("- Ninguno detectado")
     lines.extend(["", "## Productos no prescritos"])
     lines.extend(f"- {item.text}" for item in report.non_prescribed_items)
     if not report.non_prescribed_items:
