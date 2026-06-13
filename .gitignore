@@ -12,6 +12,12 @@ __pycache__/
 .pytest_cache/
 *.egg-info/
 
+# Local configuration and secrets
+config.json
+.env
+.env.*
+!.env.example
+
 # Beads / Dolt files (added by bd init)
 .dolt/
 *.db

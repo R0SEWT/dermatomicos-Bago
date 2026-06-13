@@ -1,5 +1,60 @@
 # dermatomicos-Bago — AI Agent Instructions
 
+## Lumi Product Override
+
+This section supersedes the legacy acoustic-product framing below. The main
+product is Lumi: a WhatsApp-oriented care copilot that records a versioned
+doctor-authored plan, daily observations, treatment provenance, longitudinal
+patterns, and a factual clinician report.
+
+Read before implementation:
+
+1. `docs/PRODUCT.md`
+2. `docs/ARCHITECTURE.md`
+3. `docs/RISK_REGISTER.md`
+4. `docs/IMPLEMENTATION_PLAN.md`
+
+Hard rules:
+
+- Never diagnose, classify clinical severity, or claim causality/allergy.
+- Never add, remove, reinterpret, or alter a prescribed treatment.
+- A prescribed item enters the active plan only after explicit caregiver
+  confirmation and creates an immutable plan version.
+- A `non_prescribed` item is recorded neutrally, never creates adherence
+  reminders, and appears separately in the clinician report.
+- Photos are documentation only; no image inference in the MVP.
+- Red-flag escalation is deterministic, versioned, clinician-owned policy. The
+  model cannot invent, suppress, or override it.
+- Model output is an untrusted structured proposal. Deterministic application
+  code validates and persists state.
+- Keep channel, AI, persistence, media, and report vendors behind ports.
+- Use Entra ID or managed identity for Azure. Never track credentials or patient
+  data.
+
+Target package boundary:
+
+```text
+src/lumi/                 # main product
+src/dermatomicos_bago/    # isolated acoustic experiment
+```
+
+The new `lumi` package must not import the acoustic package. TensorFlow,
+microphone, YAMNet, scratch classification, and the accumulator are experimental
+and must not become mandatory dependencies of the Lumi runtime.
+
+Do not call acoustic output clinical "severity" in new product surfaces. The
+experiment may be considered only after Lumi is complete and it passes separate
+dataset provenance, consent, performance, privacy, failure-mode, and clinical
+validation gates.
+
+Architecture choices for WhatsApp, production persistence, compute, identity,
+and retention require accepted decisions before implementation. Product docs
+describe behavior; `bd` is the source of truth for implementation tasks.
+
+---
+
+## Legacy Acoustic Research Context
+
 ## Domain / Scientific Context
 
 Proyecto de hackathon (Laboratorios Bagó, dermatología pediátrica — "Hackaton Bago Grupo 7").
