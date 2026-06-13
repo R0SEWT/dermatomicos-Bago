@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from ..adapters.reports.markdown import render_clinician_report
-from ..application.ai_mapping import map_ai_plan_proposal
+from ..application.ai_mapping import map_ai_observations, map_ai_plan_proposal
 from ..application.commands import (
     BuildClinicianReport, ConfirmMedicalPlanVersion, DeleteCaregiverData,
     ExportCaregiverData, ProposeMedicalPlan, RecordCheckIn, RegisterCaregiver,
@@ -14,6 +14,7 @@ from ..application.commands import (
 from ..application.service import LumiApplication
 from ..domain.enums import ActorKind, ConfirmationState, TreatmentSource
 from ..domain.ids import CaregiverId, DependentId, ProposalRef, ProviderEventId
+from ..domain.patterns import PatternTemplate
 from ..domain.plan import PlanProposal, ProposedPlanItem
 from ..domain.provenance import Actor, ExternalIdentity, Provenance
 from ..domain.signals import ObservationSignals
@@ -32,6 +33,7 @@ class ConversationSession:
     caregiver_id: CaregiverId | None = None
     dependent_id: DependentId | None = None
     proposal_ref: ProposalRef | None = None
+    surfaced_patterns: set[str] = field(default_factory=set)
 
 
 class ConversationRouter:
@@ -126,12 +128,9 @@ class ConversationRouter:
             return f"Plan confirmado: {version_id}."
         if command == "/checkin":
             note, observations, signals = self._parse_checkin(argument)
-            result = self._app.record_checkin(RecordCheckIn(
-                dependent_id, note, observations, signals,
-                source_message_id=str(message.provider_event_id),
-                provider_event_id=self._event(message, "checkin"),
-            ))
-            return " ".join(result.safety.messages)
+            return self._checkin(
+                message, session, dependent_id, note, observations, signals, "checkin"
+            )
         if command == "/report":
             report = self._app.build_clinician_report(BuildClinicianReport(dependent_id))
             return render_clinician_report(report)
@@ -149,8 +148,63 @@ class ConversationRouter:
             session.caregiver_id = None
             session.dependent_id = None
             session.proposal_ref = None
+            session.surfaced_patterns.clear()
             return f"Datos eliminados: {receipt.total} registros."
-        raise ValueError(HELP)
+        if command.startswith("/"):
+            raise ValueError(HELP)
+        # Free text (no slash): the natural way to log a nightly check-in. With
+        # AI configured, extract structured observations/signals; otherwise fall
+        # back to the lightweight key=value parser over the raw note.
+        if self._ai is not None:
+            extracted = self._ai.extract_daily_observations(
+                text, ExtractionContext(correlation_id=str(message.provider_event_id))
+            )
+            observations, signals = map_ai_observations(extracted)
+            note = text
+        else:
+            note, observations, signals = self._parse_checkin(text)
+        return self._checkin(
+            message, session, dependent_id, note, observations, signals, "nl-checkin"
+        )
+
+    def _checkin(
+        self, message: InboundMessage, session: ConversationSession,
+        dependent_id: DependentId, note: str,
+        observations: tuple[tuple[str, str], ...], signals: ObservationSignals,
+        suffix: str,
+    ) -> str:
+        """Record a check-in and surface a freshly-crossed longitudinal pattern."""
+        result = self._app.record_checkin(RecordCheckIn(
+            dependent_id, note, observations, signals,
+            source_message_id=str(message.provider_event_id),
+            provider_event_id=self._event(message, suffix),
+        ))
+        parts = [" ".join(result.safety.messages).strip()]
+        pattern_message = self._surface_new_pattern(session, dependent_id)
+        if pattern_message:
+            parts.append(pattern_message)
+        return " ".join(part for part in parts if part)
+
+    def _surface_new_pattern(
+        self, session: ConversationSession, dependent_id: DependentId
+    ) -> str | None:
+        """Return the magic-moment line for a new repeated-after pattern, once.
+
+        The wording is the approved, non-causal template text plus a fixed
+        caregiver-action question; the model never authors this copy.
+        """
+        report = self._app.build_clinician_report(BuildClinicianReport(dependent_id))
+        for pattern in report.candidate_patterns:
+            if (
+                pattern.template is PatternTemplate.REPEATED_AFTER
+                and pattern.rendered not in session.surfaced_patterns
+            ):
+                session.surfaced_patterns.add(pattern.rendered)
+                return (
+                    f"Noté un patrón para validar: {pattern.rendered} "
+                    "¿Quieres que lo marque para conversarlo con su pediatra?"
+                )
+        return None
 
     @staticmethod
     def _parse_plan_item(text: str) -> ProposedPlanItem:

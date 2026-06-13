@@ -48,6 +48,17 @@ def test_router_replay_does_not_duplicate(app, store):
     assert len(store.dependents) == 1
 
 
+def test_free_text_without_slash_is_recorded_as_checkin(app, store):
+    # No AI configured -> the raw note is recorded as a check-in (no slash needed).
+    identity = ExternalIdentity("web", "nl-user")
+    session = ConversationSession(identity)
+    router = ConversationRouter(app)
+    router.route(_message(identity, 1, "/start bebe"), session)
+    reply = router.route(_message(identity, 2, "Sofia durmio mal y se rasco"), session)
+    assert "registr" in reply.lower()
+    assert len(store.checkins) == 1
+
+
 def test_markdown_renderer_keeps_non_prescribed_separate(app):
     identity = ExternalIdentity("console", "render-user")
     session = ConversationSession(identity)

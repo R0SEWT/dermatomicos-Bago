@@ -14,6 +14,7 @@ from ..domain.ids import (
     PlanId, PlanItemId, PlanVersionId, ProposalRef, ProviderEventId, ReportId,
     SafetyDecisionId,
 )
+from ..domain.pattern_detection import detect_candidate_patterns
 from ..domain.plan import MedicalPlan, MedicalPlanVersion, PlanItem
 from ..domain.provenance import Actor, Provenance
 from ..domain.report import ClinicianReport, build_clinician_report
@@ -364,11 +365,14 @@ class LumiApplication:
             provenance = self._provenance(
                 Actor(ActorKind.SYSTEM, "lumi"), ConfirmationState.CONFIRMED
             )
+            patterns = detect_candidate_patterns(
+                timeline.observations, timeline.mentions, provenance=provenance
+            )
             return build_clinician_report(
                 report_id=self._id(ReportId, "report"), dependent_id=dependent.id,
                 plan=uow.repo.get_plan_for_dependent(dependent.id),
                 mentions=timeline.mentions, observations=timeline.observations,
-                media=timeline.media, candidate_patterns=(),
+                media=timeline.media, candidate_patterns=patterns,
                 policy_version=self._policy.version, generated_at=self._clock.now(),
                 provenance=provenance,
             )

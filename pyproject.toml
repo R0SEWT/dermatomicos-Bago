@@ -20,6 +20,8 @@ dependencies = [
 
 [project.optional-dependencies]
 azure = ["openai>=1.42", "azure-identity>=1.17", "pydantic>=2.8"]
+# Web demo: backend FastAPI + servidor uvicorn + carga de .env. Solo para el demo.
+web = ["fastapi>=0.115", "uvicorn[standard]>=0.30", "python-dotenv>=1.0"]
 # GPU: instala los wheels CUDA de NVIDIA junto a tensorflow.
 # Solo en máquinas con GPU NVIDIA: `uv sync --extra gpu`. No usar en laptop CPU-only.
 gpu = ["tensorflow[and-cuda]>=2.21.0"]
@@ -27,6 +29,7 @@ gpu = ["tensorflow[and-cuda]>=2.21.0"]
 [project.scripts]
 derma = "dermatomicos_bago.cli:main"
 lumi = "lumi.api.cli:main"
+lumi-web = "lumi.api.web:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -51,4 +54,5 @@ dev = [
     "pytest>=8.0",
     "pytest-timeout>=2.4.0",
     "ruff>=0.4",
+    "diagrams>=0.24",   # render de docs/diagrams (requiere Graphviz del sistema)
 ]
