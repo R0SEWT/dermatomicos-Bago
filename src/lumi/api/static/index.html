@@ -88,6 +88,25 @@
   .chip { background: #fff; border: 1px solid #d6dde1; border-radius: 14px;
     padding: .25rem .6rem; font-size: .76rem; cursor: pointer; color: var(--teal-d); }
   .chip:hover { background: var(--wa-out); }
+  /* Chips de nota de voz */
+  .vchips { display: flex; flex-wrap: wrap; gap: .35rem; margin-bottom: .4rem; }
+  .vchip { display: inline-flex; align-items: center; gap: .35rem; background: #fff;
+    border: 1px solid #d6dde1; border-radius: 14px; padding: .25rem .6rem .25rem .5rem;
+    font-size: .76rem; cursor: pointer; color: var(--teal-d); }
+  .vchip:hover { background: var(--wa-out); }
+  .vchip .mic { color: var(--wa-head); }
+  .vchip .vdur { color: var(--muted); }
+  /* Burbuja de nota de voz */
+  .bubble.voice { min-width: 215px; }
+  .vn { display: flex; align-items: center; gap: .55rem; }
+  .vn .play { width: 30px; height: 30px; border-radius: 50%; background: var(--wa-head);
+    color: #fff; display: grid; place-items: center; font-size: .72rem; flex: none; }
+  .vn .wave { flex: 1; display: flex; align-items: center; gap: 2px; height: 22px; }
+  .vn .wave i { flex: 1; background: #8fc7aa; border-radius: 2px; min-width: 2px; }
+  .vn .vdur { font-size: .66rem; color: var(--wa-meta); flex: none; }
+  .vtrans { margin-top: .4rem; padding-top: .35rem; border-top: 1px solid rgba(0,0,0,.08);
+    font-size: .8rem; color: #3b4a54; line-height: 1.3; clear: both; }
+  .vtrans b { color: var(--wa-meta); font-weight: 600; margin-right: .3rem; }
   .composer form { display: flex; gap: .5rem; align-items: center; }
   .composer input { flex: 1; border: 0; border-radius: 20px; background: #fff;
     padding: .6rem .95rem; font-size: .9rem; outline: none; }
@@ -95,6 +114,11 @@
     width: 42px; height: 42px; flex: none; cursor: pointer; font-size: 1.05rem;
     display: grid; place-items: center; }
   .composer button:hover { background: #017561; }
+  .composer button.rec { background: #fff; color: var(--wa-head); box-shadow: inset 0 0 0 1.5px #d6dde0; }
+  .composer button.rec:hover { background: #f0f2f5; }
+  .composer button.rec.recording { background: #e3493a; color: #fff; box-shadow: none;
+    animation: recpulse 1s ease-in-out infinite; }
+  @keyframes recpulse { 0%,100% { opacity: 1; } 50% { opacity: .55; } }
 
   /* ---- Panel clínico ---- */
   .panel { overflow-y: auto; padding: 1rem 1.2rem; background: #f9fafb; }
@@ -163,8 +187,10 @@
     </header>
     <div class="stream" id="stream"></div>
     <div class="composer">
+      <div class="vchips" id="vchips"></div>
       <div class="chips" id="chips"></div>
       <form id="form">
+        <button type="button" id="rec" class="rec" aria-label="Grabar nota de voz" title="Grabar nota de voz">🎤</button>
         <input id="text" autocomplete="off" placeholder="Escribe un mensaje" />
         <button type="submit" aria-label="Enviar">➤</button>
       </form>
@@ -328,6 +354,128 @@ function renderChips() {
   });
 }
 
+// ---- Notas de voz (estilo WhatsApp) ----
+function waveBars(n) {
+  // Alturas deterministas: parecen una onda sin ser aleatorias.
+  let html = "";
+  for (let i = 0; i < n; i++) {
+    const h = 5 + Math.round(13 * Math.abs(Math.sin(i * 1.3) * Math.cos(i * 0.7)));
+    html += `<i style="height:${h}px"></i>`;
+  }
+  return html;
+}
+function voiceBubble(duration, when) {
+  const b = document.createElement("div");
+  b.className = "bubble caregiver voice";
+  b.innerHTML =
+    `<div class="vn"><span class="play">▶</span>` +
+    `<span class="wave">${waveBars(22)}</span>` +
+    `<span class="vdur">${duration}</span></div>` +
+    `<div class="vtrans"><b>transcribiendo…</b></div>` +
+    `<span class="meta">${fmtTime(when)} <span class="ticks">✓✓</span></span>`;
+  return b;
+}
+async function sendVoice(id, duration) {
+  const stream = $("stream");
+  const vb = voiceBubble(duration, new Date());
+  stream.appendChild(vb);
+  stream.scrollTop = stream.scrollHeight;
+  const typing = typingBubble();
+  stream.appendChild(typing);
+  stream.scrollTop = stream.scrollHeight;
+  let r;
+  try {
+    r = await fetch("/api/voice", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    }).then((x) => x.json());
+  } finally {
+    typing.remove();
+  }
+  vb.querySelector(".vtrans").innerHTML =
+    `<b>📝 transcripción</b>${escapeHtml(r.transcript || "—")}`;
+  stream.appendChild(bubble({ role: "lumi", text: r.reply }, new Date()));
+  stream.scrollTop = stream.scrollHeight;
+  renderPanel(r.snapshot);
+}
+async function loadVoiceSamples() {
+  let samples = [];
+  try {
+    samples = (await fetch("/api/voice/samples").then((x) => x.json())).samples || [];
+  } catch (e) { samples = []; }
+  const box = $("vchips");
+  box.innerHTML = "";
+  samples.forEach((s) => {
+    const el = document.createElement("span");
+    el.className = "vchip";
+    el.innerHTML = `<span class="mic">🎤</span> Nota de voz <span class="vdur">${s.duration}</span>`;
+    el.onclick = () => sendVoice(s.id, s.duration);
+    box.appendChild(el);
+  });
+}
+
+// ---- Grabación real de notas de voz -> /api/voice/upload (Azure Whisper) ----
+let mediaRecorder = null, chunks = [];
+const recBtn = $("rec");
+if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+  recBtn.style.display = "none"; // este navegador no graba; los chips de muestra siguen
+} else {
+  recBtn.addEventListener("click", toggleRecording);
+}
+function fmtDur(s) { return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; }
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onloadend = () => resolve(String(fr.result).split(",")[1] || "");
+    fr.onerror = reject;
+    fr.readAsDataURL(blob);
+  });
+}
+async function toggleRecording() {
+  if (mediaRecorder && mediaRecorder.state === "recording") { mediaRecorder.stop(); return; }
+  let micStream;
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (e) { recBtn.classList.remove("recording"); return; } // permiso denegado
+  chunks = [];
+  const startedAt = Date.now();
+  mediaRecorder = new MediaRecorder(micStream);
+  mediaRecorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+  mediaRecorder.onstop = async () => {
+    recBtn.classList.remove("recording");
+    micStream.getTracks().forEach((t) => t.stop());
+    const blob = new Blob(chunks, { type: mediaRecorder.mimeType || "audio/webm" });
+    await uploadVoice(blob, Math.max(1, Math.round((Date.now() - startedAt) / 1000)));
+  };
+  mediaRecorder.start();
+  recBtn.classList.add("recording");
+}
+async function uploadVoice(blob, durationS) {
+  const stream = $("stream");
+  const vb = voiceBubble(fmtDur(durationS), new Date());
+  stream.appendChild(vb);
+  const typing = typingBubble();
+  stream.appendChild(typing);
+  stream.scrollTop = stream.scrollHeight;
+  let r;
+  try {
+    const audio_b64 = await blobToBase64(blob);
+    r = await fetch("/api/voice/upload", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ audio_b64, mime: blob.type || "audio/webm", duration_s: durationS }),
+    }).then((x) => x.json());
+  } finally {
+    typing.remove();
+  }
+  const t = (r && r.transcript) || "";
+  vb.querySelector(".vtrans").innerHTML = t
+    ? `<b>📝 transcripción</b>${escapeHtml(t)}`
+    : `<b>📝</b> <i>no se pudo transcribir (configura Azure Whisper)</i>`;
+  if (r && r.reply) stream.appendChild(bubble({ role: "lumi", text: r.reply }, new Date()));
+  if (r && r.snapshot) renderPanel(r.snapshot);
+  stream.scrollTop = stream.scrollHeight;
+}
+
 $("form").addEventListener("submit", (e) => { e.preventDefault(); send($("text").value); });
 $("reset").addEventListener("click", async () => {
   const r = await fetch("/api/reset", { method: "POST" }).then((x) => x.json());
@@ -335,6 +483,7 @@ $("reset").addEventListener("click", async () => {
 });
 
 renderChips();
+loadVoiceSamples();
 load();
 </script>
 </body>

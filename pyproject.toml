@@ -26,6 +26,9 @@ web = ["fastapi>=0.115", "uvicorn[standard]>=0.30", "python-dotenv>=1.0"]
 # Reporte clínico en PDF. WeasyPrint necesita pango/cairo del sistema; el render
 # HTML solo usa Jinja2 (dep core), así que el PDF es lo único tras este extra.
 report = ["weasyprint>=62"]
+# Voz: transcripción local de notas de voz (faster-whisper sobre CTranslate2,
+# sin PyTorch). Pesada → fuera del runtime base. `uv sync --extra voice`.
+voice = ["faster-whisper>=1.0"]
 # GPU: instala los wheels CUDA de NVIDIA junto a tensorflow.
 # Solo en máquinas con GPU NVIDIA: `uv sync --extra gpu`. No usar en laptop CPU-only.
 gpu = ["tensorflow[and-cuda]>=2.21.0"]
