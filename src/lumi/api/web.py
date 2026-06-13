@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 
@@ -23,14 +23,20 @@ from ..adapters.reports.markdown import render_clinician_report
 from ..application.commands import BuildClinicianReport, ExportCaregiverData
 from ..domain.ids import ProviderEventId
 from ..ports.channel import InboundMessage
+from ..ports.transcription import VoiceClip
 from .bootstrap import DemoRuntime, build_runtime, load_env
 from .seed import ChatTurn, seed_demo
+from .voice_samples import DEMO_VOICE_NOTES, SAMPLES_BY_ID
 
 _STATIC = Path(__file__).parent / "static"
 
 
 class MessageIn(BaseModel):
     text: str
+
+
+class VoiceIn(BaseModel):
+    id: str
 
 
 @dataclass
@@ -173,6 +179,44 @@ def create_app(use_ai: bool | None = None) -> FastAPI:
             reply = _route(state, text)
             state.transcript.append(ChatTurn("lumi", reply))
             return {"reply": reply, "snapshot": _snapshot(state)}
+
+    @app.get("/api/voice/samples")
+    def voice_samples() -> dict:
+        """Sample voice notes the demo can 'send' (id + display duration)."""
+        return {
+            "samples": [
+                {"id": note.id, "duration": note.duration} for note in DEMO_VOICE_NOTES
+            ]
+        }
+
+    @app.post("/api/voice")
+    def voice(body: VoiceIn) -> dict:
+        """Transcribe a sample voice note, then route the text like any message.
+
+        The transcript is untrusted input: it flows through the exact same
+        check-in path as a typed message. The caregiver turn is recorded as the
+        transcribed text so the report/panel and a later reload stay consistent.
+        """
+        note = SAMPLES_BY_ID.get(body.id)
+        if note is None:
+            raise HTTPException(status_code=404, detail="Nota de voz desconocida")
+        with state.lock:
+            clip = VoiceClip(
+                data=b"", mime="audio/ogg", duration_s=float(note.seconds),
+                reference=note.id,
+            )
+            text = state.runtime.transcriber.transcribe(clip).text.strip()
+            if not text:
+                return {"transcript": "", "reply": "", "snapshot": _snapshot(state)}
+            state.transcript.append(ChatTurn("caregiver", text))
+            reply = _route(state, text)
+            state.transcript.append(ChatTurn("lumi", reply))
+            return {
+                "transcript": text,
+                "duration": note.duration,
+                "reply": reply,
+                "snapshot": _snapshot(state),
+            }
 
     @app.post("/api/reset")
     def reset() -> dict:

@@ -6,6 +6,7 @@ console entry point all assemble the same runtime the same way.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 
 from ..adapters.persistence.in_memory import InMemoryStore, InMemoryUnitOfWork
@@ -13,6 +14,7 @@ from ..adapters.system import DemoClock, UuidGenerator
 from ..application.service import LumiApplication
 from ..domain.provenance import ExternalIdentity
 from ..ports.ai import AIExtractionPort
+from ..ports.transcription import Transcriber
 from ..safety.policy import VersionedRedFlagPolicy
 from ..safety.rulesets.v1 import RULESET_V1
 from .router import ConversationRouter, ConversationSession
@@ -48,6 +50,28 @@ def build_ai_adapter(disabled: bool = False) -> AIExtractionPort | None:
         return None
 
 
+def build_transcriber() -> Transcriber:
+    """Build the voice-note transcriber for the demo.
+
+    With ``LUMI_VOICE=1`` and the optional ``[voice]`` extra installed, returns
+    the real faster-whisper transcriber. Otherwise falls back to the canned demo
+    transcriber so the WhatsApp demo plays sample voice notes deterministically
+    without loading a speech model. Swapping is a one-line change at this seam —
+    nothing downstream of the port cares which one is wired.
+    """
+    if os.environ.get("LUMI_VOICE", "0") == "1":
+        try:
+            from ..adapters.media.faster_whisper import FasterWhisperTranscriber
+
+            return FasterWhisperTranscriber()
+        except ImportError:
+            pass
+    from ..adapters.media.canned import CannedTranscriber
+    from .voice_samples import demo_transcript_map
+
+    return CannedTranscriber(demo_transcript_map())
+
+
 @dataclass
 class DemoRuntime:
     """Everything the web app / CLI / seed need to drive one conversation."""
@@ -58,6 +82,7 @@ class DemoRuntime:
     router: ConversationRouter
     session: ConversationSession
     ai: AIExtractionPort | None
+    transcriber: Transcriber
 
 
 def build_runtime(
@@ -74,4 +99,6 @@ def build_runtime(
     )
     router = ConversationRouter(application, ai)
     session = ConversationSession(identity or ExternalIdentity("web", "demo-user"))
-    return DemoRuntime(store, clock, application, router, session, ai)
+    return DemoRuntime(
+        store, clock, application, router, session, ai, build_transcriber()
+    )
