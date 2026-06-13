@@ -50,26 +50,39 @@ def build_ai_adapter(disabled: bool = False) -> AIExtractionPort | None:
         return None
 
 
-def build_transcriber() -> Transcriber:
-    """Build the voice-note transcriber for the demo.
+def build_transcriber(disabled: bool = False) -> Transcriber:
+    """Build the voice-note transcriber for real audio, preferring Azure Whisper.
 
-    With ``LUMI_VOICE=1`` and the optional ``[voice]`` extra installed, returns
-    the real faster-whisper transcriber. Otherwise falls back to the canned demo
-    transcriber so the WhatsApp demo plays sample voice notes deterministically
-    without loading a speech model. Swapping is a one-line change at this seam —
-    nothing downstream of the port cares which one is wired.
+    Order: Azure OpenAI transcription (reuses the same endpoint + Entra ID /
+    managed identity as the extractor — set ``AZURE_OPENAI_TRANSCRIBE_DEPLOYMENT``)
+    -> optional local faster-whisper (``LUMI_VOICE_LOCAL=1`` + the ``[voice]``
+    extra) -> a no-op canned transcriber. Gated by ``disabled`` (AI off) so
+    tests and offline demos stay hermetic and never construct an Azure client.
+
+    Only *real uploaded audio* flows through this transcriber. The demo's sample
+    voice notes are scripted fixtures resolved directly, so the sample buttons
+    work on stage regardless of which engine (if any) is wired.
     """
-    if os.environ.get("LUMI_VOICE", "0") == "1":
+    if not disabled:
         try:
-            from ..adapters.media.faster_whisper import FasterWhisperTranscriber
+            from ..adapters.media.azure_whisper import (
+                AzureWhisperSettings,
+                AzureWhisperTranscriber,
+            )
 
-            return FasterWhisperTranscriber()
-        except ImportError:
+            return AzureWhisperTranscriber(AzureWhisperSettings.from_env())
+        except (ImportError, ValueError):
             pass
-    from ..adapters.media.canned import CannedTranscriber
-    from .voice_samples import demo_transcript_map
+        if os.environ.get("LUMI_VOICE_LOCAL") == "1":
+            try:
+                from ..adapters.media.faster_whisper import FasterWhisperTranscriber
 
-    return CannedTranscriber(demo_transcript_map())
+                return FasterWhisperTranscriber()
+            except ImportError:
+                pass
+    from ..adapters.media.canned import CannedTranscriber
+
+    return CannedTranscriber({}, default="")
 
 
 @dataclass
@@ -100,5 +113,6 @@ def build_runtime(
     router = ConversationRouter(application, ai)
     session = ConversationSession(identity or ExternalIdentity("web", "demo-user"))
     return DemoRuntime(
-        store, clock, application, router, session, ai, build_transcriber()
+        store, clock, application, router, session, ai,
+        build_transcriber(disabled=not use_ai),
     )

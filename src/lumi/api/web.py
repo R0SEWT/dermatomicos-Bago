@@ -8,6 +8,8 @@ use cases (it never reaches into the repository directly).
 
 from __future__ import annotations
 
+import base64
+import binascii
 import html
 import os
 import threading
@@ -37,6 +39,14 @@ class MessageIn(BaseModel):
 
 class VoiceIn(BaseModel):
     id: str
+
+
+class VoiceUploadIn(BaseModel):
+    """A real recorded voice note: base64 audio + its container type/length."""
+
+    audio_b64: str
+    mime: str = "audio/webm"
+    duration_s: float | None = None
 
 
 @dataclass
@@ -118,6 +128,30 @@ def _route(state: DemoState, text: str) -> str:
         return str(error)
 
 
+def _fmt_duration(seconds: float | None) -> str:
+    """Render a clip length as ``m:ss`` for the chat bubble."""
+    total = int(seconds or 0)
+    return f"{total // 60}:{total % 60:02d}"
+
+
+def _voice_turn(state: DemoState, text: str, duration: str) -> dict:
+    """Record a transcribed voice note as a caregiver turn and route it.
+
+    Shared by the scripted-sample and real-upload endpoints: a transcript is
+    untrusted input that flows through the exact same check-in path as a typed
+    message. The caller holds ``state.lock``.
+    """
+    state.transcript.append(ChatTurn("caregiver", text))
+    reply = _route(state, text)
+    state.transcript.append(ChatTurn("lumi", reply))
+    return {
+        "transcript": text,
+        "duration": duration,
+        "reply": reply,
+        "snapshot": _snapshot(state),
+    }
+
+
 def _markdown_to_html(markdown: str) -> str:
     """Render the simple report markdown (headings, lists, quote) to safe HTML."""
     lines_out: list[str] = []
@@ -191,32 +225,43 @@ def create_app(use_ai: bool | None = None) -> FastAPI:
 
     @app.post("/api/voice")
     def voice(body: VoiceIn) -> dict:
-        """Transcribe a sample voice note, then route the text like any message.
+        """Replay a scripted sample voice note, then route it like any message.
 
-        The transcript is untrusted input: it flows through the exact same
-        check-in path as a typed message. The caregiver turn is recorded as the
-        transcribed text so the report/panel and a later reload stay consistent.
+        Sample notes are fixtures with no audio: the transcript is resolved
+        directly so the demo buttons work on stage regardless of which speech
+        engine (if any) is wired. Real recorded audio goes through
+        ``/api/voice/upload`` instead. The transcript is still untrusted input
+        and flows through the exact same check-in path as a typed message.
         """
         note = SAMPLES_BY_ID.get(body.id)
         if note is None:
             raise HTTPException(status_code=404, detail="Nota de voz desconocida")
         with state.lock:
-            clip = VoiceClip(
-                data=b"", mime="audio/ogg", duration_s=float(note.seconds),
-                reference=note.id,
-            )
+            return _voice_turn(state, note.transcript, note.duration)
+
+    @app.post("/api/voice/upload")
+    def voice_upload(body: VoiceUploadIn) -> dict:
+        """Transcribe *real* recorded audio via the wired engine, then route it.
+
+        Azure OpenAI transcription is preferred when configured (it reuses the
+        extractor's endpoint + Entra ID); otherwise optional local faster-whisper
+        or, with no engine wired, an empty transcript. The audio is transcribed
+        at the edge and immediately discarded — it is never persisted. The
+        recovered text is untrusted and enters the same check-in path as a typed
+        message.
+        """
+        try:
+            data = base64.b64decode(body.audio_b64, validate=True)
+        except (ValueError, binascii.Error) as error:
+            raise HTTPException(status_code=422, detail="audio_b64 inválido") from error
+        if not data:
+            raise HTTPException(status_code=422, detail="audio vacío")
+        with state.lock:
+            clip = VoiceClip(data=data, mime=body.mime, duration_s=body.duration_s)
             text = state.runtime.transcriber.transcribe(clip).text.strip()
             if not text:
                 return {"transcript": "", "reply": "", "snapshot": _snapshot(state)}
-            state.transcript.append(ChatTurn("caregiver", text))
-            reply = _route(state, text)
-            state.transcript.append(ChatTurn("lumi", reply))
-            return {
-                "transcript": text,
-                "duration": note.duration,
-                "reply": reply,
-                "snapshot": _snapshot(state),
-            }
+            return _voice_turn(state, text, _fmt_duration(body.duration_s))
 
     @app.post("/api/reset")
     def reset() -> dict:
