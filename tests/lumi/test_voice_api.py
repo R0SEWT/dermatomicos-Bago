@@ -78,3 +78,13 @@ def test_upload_rejects_invalid_base64(client):
 
 def test_upload_rejects_empty_audio(client):
     assert client.post("/api/voice/upload", json={"audio_b64": ""}).status_code == 422
+
+
+def test_upload_rejects_oversize_audio(client):
+    # An over-limit base64 string is rejected (413) BEFORE it is decoded, so a
+    # huge payload can't exhaust memory at the decode step.
+    from lumi.api.web import _MAX_AUDIO_B64_LEN
+
+    oversize = "A" * (_MAX_AUDIO_B64_LEN + 4)
+    r = client.post("/api/voice/upload", json={"audio_b64": oversize})
+    assert r.status_code == 413

@@ -49,6 +49,14 @@ class VoiceUploadIn(BaseModel):
     duration_s: float | None = None
 
 
+# Upper bound on an uploaded voice note (decoded bytes). Matches the transcription
+# engines' per-file limit (~25 MB); bounding the payload stops a large upload from
+# exhausting memory at the base64-decode step.
+_MAX_AUDIO_BYTES = 25 * 1024 * 1024
+# base64 inflates ~4/3; the encoded string can be at most this long.
+_MAX_AUDIO_B64_LEN = (_MAX_AUDIO_BYTES + 2) // 3 * 4
+
+
 @dataclass
 class DemoState:
     """One in-process demo conversation: runtime + chat transcript."""
@@ -250,12 +258,18 @@ def create_app(use_ai: bool | None = None) -> FastAPI:
         recovered text is untrusted and enters the same check-in path as a typed
         message.
         """
+        # Bound the payload BEFORE decoding so an oversize upload can't exhaust
+        # memory at the decode step.
+        if len(body.audio_b64) > _MAX_AUDIO_B64_LEN:
+            raise HTTPException(status_code=413, detail="audio demasiado grande")
         try:
             data = base64.b64decode(body.audio_b64, validate=True)
         except (ValueError, binascii.Error) as error:
             raise HTTPException(status_code=422, detail="audio_b64 inválido") from error
         if not data:
             raise HTTPException(status_code=422, detail="audio vacío")
+        if len(data) > _MAX_AUDIO_BYTES:
+            raise HTTPException(status_code=413, detail="audio demasiado grande")
         with state.lock:
             clip = VoiceClip(data=data, mime=body.mime, duration_s=body.duration_s)
             text = state.runtime.transcriber.transcribe(clip).text.strip()
