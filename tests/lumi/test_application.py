@@ -1,3 +1,5 @@
+from datetime import date
+
 import pytest
 
 from lumi.adapters.persistence.in_memory import InMemoryRepository, InMemoryUnitOfWork
@@ -130,6 +132,41 @@ def test_end_to_end_report_export_and_delete(app, store):
     assert store.mentions == []
     assert store.observations == []
     assert store.safety_decisions == []
+
+
+# The suite's FixedClock is anchored to 2026-06-13; relative expressions in a
+# check-in/mention note must date the fact to the event day, not the message day.
+def test_checkin_dates_observations_from_relative_expression(app, store):
+    _, dependent = _onboard(app)
+    app.record_checkin(RecordCheckIn(
+        dependent, "Anteayer le cambiamos a un jabón nuevo",
+        observations=(("exposure", "jabón nuevo"),),
+        provider_event_id="event-checkin",
+    ))
+    assert store.observations[0].effective_date == date(2026, 6, 11)
+
+
+def test_checkin_without_relative_expression_leaves_effective_date_none(app, store):
+    _, dependent = _onboard(app)
+    app.record_checkin(RecordCheckIn(
+        dependent, "Durmió tranquila anoche",  # 'anoche' is not a day shift
+        observations=(("sleep", "bien"),),
+        provider_event_id="event-checkin",
+    ))
+    obs = store.observations[0]
+    assert obs.effective_date is None
+    # Falls back to the message date, so provenance stays the audit record.
+    assert obs.provenance.recorded_at.date() == date(2026, 6, 13)
+
+
+def test_treatment_mention_dates_from_relative_expression(app, store):
+    _, dependent = _onboard(app)
+    app.record_treatment_mention(RecordTreatmentMention(
+        dependent, TreatmentSource.NON_PRESCRIBED,
+        "Hace 3 días le puse manzanilla",
+        provider_event_id="event-remedy",
+    ))
+    assert store.mentions[0].effective_date == date(2026, 6, 10)
 
 
 def test_unit_of_work_rolls_back_uncommitted_changes(store):

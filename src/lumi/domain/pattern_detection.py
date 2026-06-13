@@ -100,7 +100,7 @@ def _events(
     symptoms: list[tuple[date, str]] = []
     exposures: list[tuple[date, str]] = []
     for obs in observations:
-        on = obs.provenance.recorded_at.date()
+        on = obs.effective_date or obs.provenance.recorded_at.date()
         symptom = _symptom_phrase(obs)
         if symptom is not None:
             symptoms.append((on, symptom))
@@ -112,9 +112,9 @@ def _events(
         if mention.source is TreatmentSource.NON_PRESCRIBED:
             value = mention.text.strip()
             if value:
+                on = mention.effective_date or mention.provenance.recorded_at.date()
                 exposures.append((
-                    mention.provenance.recorded_at.date(),
-                    value if len(value) <= 40 else "un remedio no prescrito",
+                    on, value if len(value) <= 40 else "un remedio no prescrito",
                 ))
     return symptoms, exposures
 

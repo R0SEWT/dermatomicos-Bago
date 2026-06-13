@@ -17,6 +17,7 @@ from ..domain.ids import (
 from ..domain.pattern_detection import detect_candidate_patterns
 from ..domain.plan import MedicalPlan, MedicalPlanVersion, PlanItem
 from ..domain.provenance import Actor, Provenance
+from ..domain.relative_dates import resolve_relative_date
 from ..domain.report import ClinicianReport, build_clinician_report
 from ..domain.safety_decision import SafetyDecision
 from ..domain.treatment import TreatmentMention
@@ -286,6 +287,9 @@ class LumiApplication:
                 source=command.source, text=command.text,
                 linked_plan_item_id=command.linked_plan_item_id,
                 provenance=provenance,
+                effective_date=resolve_relative_date(
+                    command.text, provenance.recorded_at.date()
+                ),
             )
             if command.linked_plan_item_id is not None:
                 plan = uow.repo.get_plan_for_dependent(command.dependent_id)
@@ -322,10 +326,16 @@ class LumiApplication:
                 provider_event_id=command.provider_event_id,
                 source_message_id=command.source_message_id,
             )
+            # One temporal anchor per note: a relative expression ("anteayer")
+            # dates every observation in this check-in to the event day.
+            effective_date = resolve_relative_date(
+                command.note_text, provenance.recorded_at.date()
+            )
             observations = tuple(Observation(
                 id=self._id(ObservationId, "observation"),
                 dependent_id=command.dependent_id, category=category,
                 value_text=value, provenance=provenance,
+                effective_date=effective_date,
             ) for category, value in command.observations)
             checkin = DailyCheckIn(
                 id=self._id(CheckInId, "checkin"), dependent_id=command.dependent_id,
