@@ -1,8 +1,10 @@
 from datetime import datetime, timezone
 
 from lumi.api.router import ConversationRouter, ConversationSession
+from lumi.domain.enums import TreatmentSource
 from lumi.domain.ids import ProviderEventId
 from lumi.domain.provenance import ExternalIdentity
+from lumi.ports.ai import AIPlanProposal, ProposedPlanItem, VersionStamp
 from lumi.ports.channel import InboundMessage
 
 
@@ -11,6 +13,24 @@ def _message(identity, number, text):
         identity, ProviderEventId(f"provider-{number}"), text,
         datetime(2026, 6, 13, 12, number, tzinfo=timezone.utc),
     )
+
+
+class PlanAIStub:
+    def extract_plan_proposal(self, text, context):
+        version = VersionStamp("gpt-4.1", "v1", "v1", "s1", "p1", "e1")
+        return AIPlanProposal((
+            ProposedPlanItem(
+                "manzanilla", TreatmentSource.NON_PRESCRIBED,
+                "manzanilla", 0.9, False,
+            ),
+            ProposedPlanItem(
+                "crema indicada", TreatmentSource.PRESCRIBED,
+                "crema indicada", 0.9, False,
+            ),
+        ), version)
+
+    def extract_daily_observations(self, text, context):
+        raise AssertionError("not used")
 
 
 def test_console_slice_routes_plan_checkin_report_export_delete(app, store):
@@ -69,3 +89,22 @@ def test_markdown_renderer_keeps_non_prescribed_separate(app):
     rendered = router.route(_message(identity, 4, "/report"), session)
     assert "## Plan prescrito activo" in rendered
     assert "## Productos no prescritos" in rendered
+
+
+def test_plan_ai_routes_non_prescribed_item_outside_confirmation(app, store):
+    identity = ExternalIdentity("console", "ai-plan-user")
+    session = ConversationSession(identity)
+    router = ConversationRouter(app, PlanAIStub())
+    router.route(_message(identity, 1, "/start bebe"), session)
+
+    reply = router.route(
+        _message(identity, 2, "/plan-ai manzanilla y crema indicada"), session
+    )
+
+    assert "no prescrito" in reply
+    assert [mention.text for mention in store.mentions] == ["manzanilla"]
+    assert "Plan confirmado" in router.route(
+        _message(identity, 3, "/confirm"), session
+    )
+    rendered = router.route(_message(identity, 4, "/report"), session)
+    assert "manzanilla" in rendered

@@ -120,7 +120,7 @@ def build_clinician_report(
 
     evolution = tuple(
         EvolutionPoint(
-            on=o.provenance.recorded_at.date(),
+            on=o.effective_date or o.provenance.recorded_at.date(),
             category=o.category,
             note=o.value_text,
         )
