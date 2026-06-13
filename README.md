@@ -81,6 +81,73 @@ The `lumi` package must **not** import from `dermatomicos_bago`. TensorFlow,
 YAMNet, the microphone, and scratch classification are experimental and are not
 runtime dependencies of Lumi.
 
+## Voice notes
+
+A voice note is just another way to author a check-in: audio is transcribed **at
+the edge** and the resulting text flows into the *same* untrusted extraction /
+check-in path as a typed message — the conversation core never sees audio. Behind
+the `Transcriber` port sit three swappable adapters: a deterministic canned one
+(demo/tests), **Azure OpenAI Whisper** (the real engine), and a local
+faster-whisper fallback (`[voice]` extra). The demo exposes `/api/voice` (scripted
+samples) and `/api/voice/upload` (real recorded audio).
+
+> ⚠️ Whisper on Azure is served on the **classic deployment-scoped path**
+> (`/openai/deployments/{deployment}/audio/transcriptions?api-version=…`), **not**
+> the `/openai/v1` surface the chat extractor uses — so its adapter drives the
+> `AzureOpenAI` client. Full details, config and the deploy gotcha in
+> [`docs/VOICE_NOTES.md`](docs/VOICE_NOTES.md).
+
+Enable real transcription by creating a transcription deployment and pointing the
+demo at it:
+
+```bash
+az cognitiveservices account deployment create \
+  --name <resource> --resource-group rg-team-09 \
+  --deployment-name whisper --model-name whisper --model-version 001 \
+  --model-format OpenAI --sku-name Standard --sku-capacity 1
+# then in .env:  AZURE_OPENAI_TRANSCRIBE_DEPLOYMENT=whisper
+```
+
+## Live demo (deploy)
+
+The web demo is deployed to **Azure App Service** (Linux container) at
+**https://lumi-demo-cg65uw.azurewebsites.net** — HTTPS (required for the in-browser
+microphone), with Azure Whisper wired for real transcription. The image is
+deliberately minimal: it installs only the Lumi runtime deps (`[web]` + `[azure]`)
+and **not** the acoustic base dependencies (TensorFlow, sounddevice…), since the
+`lumi` package is isolated from `dermatomicos_bago`.
+
+Build / redeploy (image lives in ACR `lumiacrcg65uw`):
+
+```bash
+az acr login -n lumiacrcg65uw
+docker build -t lumiacrcg65uw.azurecr.io/lumi-demo:v2 .
+docker push lumiacrcg65uw.azurecr.io/lumi-demo:v2
+az webapp config container set -n lumi-demo-cg65uw -g rg-team-09 \
+  --container-image-name lumiacrcg65uw.azurecr.io/lumi-demo:v2 \
+  --container-registry-url https://lumiacrcg65uw.azurecr.io
+az webapp restart -n lumi-demo-cg65uw -g rg-team-09
+```
+
+Notes on the deploy decisions (constrained by **Contributor** RBAC on `rg-team-09`):
+
+- It is **App Service**, not Azure Container Apps — the `Microsoft.App` provider is
+  unregistered at the subscription and registering it needs subscription-level
+  permission. App Service (`Microsoft.Web`) is the viable equivalent without admin.
+- Auth uses the **API key as an encrypted app setting** (not in the repo), not
+  managed identity, because granting the app's identity the `Cognitive Services
+  OpenAI User` role needs role-assignment rights that Contributor lacks. The ACR
+  pull uses registry admin credentials for the same reason. Migrating to managed
+  identity + Container Apps is a follow-up once RBAC allows.
+
+Tear down to stop the ~\$18/mo cost (App Service B1 + ACR Basic):
+
+```bash
+az webapp delete -n lumi-demo-cg65uw -g rg-team-09
+az appservice plan delete -n lumi-plan -g rg-team-09 --yes
+az acr delete -n lumiacrcg65uw -g rg-team-09 --yes
+```
+
 ## Local setup
 
 Prerequisites: Python 3.11, [`uv`](https://docs.astral.sh/uv/), Graphviz (only
