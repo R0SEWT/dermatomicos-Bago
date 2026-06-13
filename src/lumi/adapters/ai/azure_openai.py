@@ -1,19 +1,29 @@
-"""Azure OpenAI v1 structured extraction with Microsoft Entra ID."""
+"""Azure OpenAI v1 structured extraction.
+
+Microsoft Entra ID is the default. API-key authentication is an explicit local
+demo fallback when ``AZURE_OPENAI_API_KEY`` is present.
+"""
 
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
 from ...ports.ai import (
-    AIPlanProposal, ExtractionContext, ObservationProposal, ProposedSafetySignals,
+    AIPlanProposal,
+    ExtractionContext,
+    ObservationProposal,
+    ProposedSafetySignals,
     VersionStamp,
 )
 from ._sanitize import sanitize_observations, sanitize_plan
 from .config import AISettings
 from .schemas import (
-    OBSERVATION_SCHEMA_VERSION, PLAN_SCHEMA_VERSION, ObservationExtractionSchema,
+    OBSERVATION_SCHEMA_VERSION,
+    PLAN_SCHEMA_VERSION,
+    ObservationExtractionSchema,
     PlanExtractionSchema,
 )
 
@@ -27,16 +37,22 @@ class AzureOpenAIExtractionAdapter:
     def __init__(self, settings: AISettings, client: Any | None = None) -> None:
         self._settings = settings
         if client is None:
-            from azure.identity import DefaultAzureCredential, get_bearer_token_provider
             from openai import OpenAI
 
-            token_provider = get_bearer_token_provider(
-                DefaultAzureCredential(),
-                "https://cognitiveservices.azure.com/.default",
-            )
+            credential = os.environ.get("AZURE_OPENAI_API_KEY")
+            if credential is None:
+                from azure.identity import (
+                    DefaultAzureCredential,
+                    get_bearer_token_provider,
+                )
+
+                credential = get_bearer_token_provider(
+                    DefaultAzureCredential(),
+                    "https://cognitiveservices.azure.com/.default",
+                )
             client = OpenAI(
                 base_url=settings.base_url,
-                api_key=token_provider,
+                api_key=credential,
                 timeout=settings.timeout_seconds,
                 max_retries=settings.max_retries,
             )
@@ -63,9 +79,7 @@ class AzureOpenAIExtractionAdapter:
             f"active_plan_summary={context.active_plan_summary or 'none'}"
         )
 
-    def extract_plan_proposal(
-        self, text: str, context: ExtractionContext
-    ) -> AIPlanProposal:
+    def extract_plan_proposal(self, text: str, context: ExtractionContext) -> AIPlanProposal:
         version = self._version(PLAN_SCHEMA_VERSION)
         completion = self._client.beta.chat.completions.parse(
             model=self._settings.deployment,
@@ -83,9 +97,7 @@ class AzureOpenAIExtractionAdapter:
         )
         if message.refusal or message.parsed is None:
             return AIPlanProposal((), version, ("model_refusal",))
-        return sanitize_plan(
-            message.parsed, text, version, self._settings.confidence_threshold
-        )
+        return sanitize_plan(message.parsed, text, version, self._settings.confidence_threshold)
 
     def extract_daily_observations(
         self, text: str, context: ExtractionContext
@@ -106,9 +118,7 @@ class AzureOpenAIExtractionAdapter:
             extra={"correlation_id": context.correlation_id, "deployment": version.deployment},
         )
         if message.refusal or message.parsed is None:
-            return ObservationProposal(
-                (), ProposedSafetySignals(), version, ("model_refusal",)
-            )
+            return ObservationProposal((), ProposedSafetySignals(), version, ("model_refusal",))
         return sanitize_observations(
             message.parsed, text, version, self._settings.confidence_threshold
         )

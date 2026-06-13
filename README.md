@@ -44,6 +44,17 @@ uv run ruff check .
 uv run pytest -q
 ```
 
+For a local Azure OpenAI demo, keep credentials only in the ignored `.env` file
+and run:
+
+```bash
+uv run --extra azure --env-file .env lumi
+```
+
+`AZURE_OPENAI_API_KEY` is supported as a temporary local-demo fallback. Leave it
+unset to use Microsoft Entra ID via `DefaultAzureCredential`, which remains the
+production authentication target.
+
 `config.json` and `.env` are local-only. Never commit credentials, access keys,
 WhatsApp tokens, patient data, photos, audio, or generated clinical reports.
 
