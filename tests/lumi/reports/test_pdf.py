@@ -109,9 +109,13 @@ def test_html_keeps_non_prescribed_separate_from_plan():
 
 def test_html_has_no_causal_or_diagnostic_language():
     html = render_clinician_report_html(_report()).lower()
-    for forbidden in ("alergia", "causa", "diagnostic", "porque le dio"):
-        assert forbidden not in html or forbidden == "diagnostic"
-    # "diagnostic" only allowed inside the disclaimer's "no es un diagnostico".
+    # Real causal/diagnostic terms must never appear (stems, accent-insensitive).
+    for forbidden in ("alergi", "caus", "provoc", "porque", "brote confirmado"):
+        assert forbidden not in html
+    # The diagnostic stem is allowed ONLY inside the two negating safety phrases
+    # (the disclaimer and the patterns note); nowhere else.
+    residual = html.replace("no es un diagnostico", "").replace("no son diagnostico", "")
+    assert "diagn" not in residual
     assert "no es un diagnostico" in html
 
 

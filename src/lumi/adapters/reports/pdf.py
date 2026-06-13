@@ -26,7 +26,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from jinja2 import Environment, select_autoescape
+from jinja2 import Environment
 
 from ...domain.report import ClinicianReport
 
@@ -119,7 +119,10 @@ _TEMPLATE_SOURCE = """\
 </html>
 """
 
-_ENV = Environment(autoescape=select_autoescape(["html", "xml"]), trim_blocks=True)
+# We always render HTML from a string template (no filename for
+# ``select_autoescape`` to key on, which would default to autoescaping OFF), so
+# force autoescaping on to keep caregiver/free-text values HTML-safe.
+_ENV = Environment(autoescape=True, trim_blocks=True)
 _TEMPLATE = _ENV.from_string(_TEMPLATE_SOURCE)
 
 
