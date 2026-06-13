@@ -22,3 +22,7 @@ config.json
 .dolt/
 *.db
 .beads-credential-key
+
+# Playwright MCP scratch + local demo screenshots
+.playwright-mcp/
+lumi-wa-*.png
